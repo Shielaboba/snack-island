@@ -229,6 +229,7 @@ watch(
   (type) => {
     if (auditorLockedTypes.includes(type)) form.wallet = 'auditor_cash'
     if (type === 'gcash_remittance') form.wallet = 'gcash'
+    if (type === 'expense' && props.mode === 'add') form.wallet = 'expense'
     if (type !== 'expense') form.category = null
   }
 )

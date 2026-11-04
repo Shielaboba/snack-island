@@ -141,6 +141,10 @@ describe('Ledger.vue', () => {
     type.value = 'expense'
     type.dispatchEvent(new Event('change'))
     await nextTick()
+    const wallet = document.querySelector('[data-testid="ledger-wallet"]') as HTMLSelectElement
+    wallet.value = 'auditor_cash'
+    wallet.dispatchEvent(new Event('change'))
+    await nextTick()
     const category = document.querySelector('[data-testid="ledger-category"]') as HTMLSelectElement
     category.value = 'Labor'
     category.dispatchEvent(new Event('change'))

@@ -56,6 +56,12 @@ const routes = [
     meta: { requiresAuth: true, allowedRoles: [0] } // Admin only
   },
   {
+    path: '/weekly',
+    name: 'WeeklySummary',
+    component: () => import('../components/WeeklySummary.vue'),
+    meta: { requiresAuth: true, allowedRoles: [0] } // Admin only
+  },
+  {
     path: '/inventory',
     name: 'Inventory',
     component: Inventory,

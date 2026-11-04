@@ -44,6 +44,30 @@ describe('LedgerEntryModal', () => {
     app.unmount()
   })
 
+  it('shows a placeholder instead of a fake category when switching to expense', async () => {
+    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    type.value = 'expense'
+    type.dispatchEvent(new Event('change'))
+    await nextTick()
+    const category = document.querySelector('[data-testid="ledger-category"]') as HTMLSelectElement
+    expect(category.value).toBe('')
+    expect(category.selectedOptions[0]?.textContent).toContain('Select a category')
+    app.unmount()
+  })
+
+  it('disables Save and ignores clicks while saving', async () => {
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add', saving: true })
+    await nextTick()
+    const submit = document.querySelector('[data-testid="ledger-submit"]') as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    submit.dispatchEvent(new MouseEvent('click'))
+    await nextTick()
+    expect(getSubmitted()).toBeNull()
+    app.unmount()
+  })
+
   it('keeps trailing decimal zeros while typing an amount', async () => {
     const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
     await nextTick()

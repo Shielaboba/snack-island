@@ -107,6 +107,7 @@
       :mode="modalMode"
       :entry="editing"
       :error="modalOpen ? error : ''"
+      :saving="isSaving"
       @submit="onSubmit"
       @close="closeModal"
     />
@@ -132,6 +133,7 @@ import {
 const entries = ref<LedgerEntry[]>([])
 const error = ref('')
 const isLoading = ref(false)
+const isSaving = ref(false)
 const modalOpen = ref(false)
 const modalMode = ref<'add' | 'remit-owner' | 'edit'>('add')
 const editing = ref<LedgerEntry | null>(null)
@@ -208,6 +210,8 @@ function closeModal() {
 }
 
 async function onSubmit(input: CreateLedgerEntryInput) {
+  if (isSaving.value) return
+  isSaving.value = true
   error.value = ''
   const payload = {
     ...input,
@@ -223,17 +227,23 @@ async function onSubmit(input: CreateLedgerEntryInput) {
     await load()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to save ledger entry.'
+  } finally {
+    isSaving.value = false
   }
 }
 
 async function onDelete(row: LedgerEntry) {
   const label = ledgerTypeLabel(row.type)
+  if (isSaving.value) return
   if (!confirm(`Delete ${label} of ₱${formatCurrency(row.amount)}?`)) return
+  isSaving.value = true
   try {
     await ledgerService.remove(row.id, entries.value)
     await load()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to delete ledger entry.'
+  } finally {
+    isSaving.value = false
   }
 }
 

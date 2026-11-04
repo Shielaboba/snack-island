@@ -4,7 +4,7 @@ import {
   type CreateLedgerEntryInput,
   type LedgerEntry
 } from '../models/Ledger'
-import { validateEntry } from '../modules/ledger/ledgerUtils'
+import { validateEntry, validateRemoval } from '../modules/ledger/ledgerUtils'
 
 const SELECT_COLUMNS =
   'id, entry_date, type, wallet, amount, category, note, transfer_id, created_by, created_at, updated_at'
@@ -101,6 +101,13 @@ export const ledgerService = {
   async remove(id: string, existing: LedgerEntry[]): Promise<void> {
     const current = existing.find((row) => row.id === id)
     if (!current) throw new Error('Ledger entry not found.')
+    const removedIds = existing
+      .filter((row) =>
+        current.transfer_id ? row.transfer_id === current.transfer_id : row.id === current.id
+      )
+      .map((row) => row.id)
+    const check = validateRemoval(removedIds, existing)
+    if (!check.ok) throw new Error(check.message)
     const query = supabase.from(LEDGER_TABLE).delete()
     const { error } = current.transfer_id
       ? await query.eq('transfer_id', current.transfer_id)

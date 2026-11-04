@@ -179,4 +179,10 @@ describe('ledgerService.update and remove', () => {
     await ledgerService.remove('open-1', [opening])
     expect(mockEq).toHaveBeenCalledWith('id', 'open-1')
   })
+
+  it('refuses to delete starting cash that an expense depends on', async () => {
+    const expense: LedgerEntry = { ...opening, id: 'e1', type: 'expense', amount: 800, category: 'Labor' }
+    await expect(ledgerService.remove('open-1', [opening, expense])).rejects.toThrow(/Can't delete/)
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
 })

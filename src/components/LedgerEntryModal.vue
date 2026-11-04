@@ -60,6 +60,7 @@
                 data-testid="ledger-category"
                 @change="onCategoryChange"
               >
+                <option value="" disabled>Select a category</option>
                 <option v-for="category in LEDGER_EXPENSE_CATEGORIES" :key="category" :value="category">
                   {{ category }}
                 </option>
@@ -86,7 +87,15 @@
 
           <div class="modal-footer">
             <button class="btn btn-secondary" type="button" @click="emit('close')">Cancel</button>
-            <button class="btn btn-primary" type="submit" data-testid="ledger-submit" @click.prevent="onSubmit">Save</button>
+            <button
+              class="btn btn-primary"
+              type="submit"
+              data-testid="ledger-submit"
+              :disabled="saving"
+              @click.prevent="onSubmit"
+            >
+              {{ saving ? 'Saving…' : 'Save' }}
+            </button>
           </div>
         </form>
       </div>
@@ -111,6 +120,7 @@ const props = defineProps<{
   mode: 'add' | 'remit-owner' | 'edit'
   entry?: LedgerEntry | null
   error?: string
+  saving?: boolean
 }>()
 
 const amountText = ref('')
@@ -203,6 +213,7 @@ function onCategoryChange(event: Event) {
 }
 
 function onSubmit() {
+  if (props.saving) return
   emit('submit', {
     entry_date: form.entry_date,
     type: form.type,

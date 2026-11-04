@@ -8,6 +8,7 @@ import {
   manilaWeekWindow,
   manilaYmd,
   validateEntry,
+  validateRemoval,
   walletRemaining,
   weekSummary
 } from '../../src/modules/ledger/ledgerUtils'
@@ -201,5 +202,51 @@ describe('ledgerTypeLabel', () => {
     expect(ledgerTypeLabel('owner_remittance')).toBe('Remit to owner')
     expect(ledgerTypeLabel('petty_issue')).toBe('Petty cash issued')
     expect(ledgerTypeLabel('expense')).toBe('Expense')
+  })
+})
+
+describe('per-day balance checks', () => {
+  const opening = row({ id: 'o', type: 'opening_cash', wallet: 'auditor_cash', amount: 1000, entry_date: '2026-09-24' })
+
+  it('rejects a backdated expense dated before the cash came in', () => {
+    const result = validateEntry(
+      { entry_date: '2026-09-21', type: 'expense', wallet: 'auditor_cash', amount: 500, category: 'Supplies' },
+      [opening]
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('would go negative on 2026-09-21')
+  })
+
+  it('allows spending on the same day the cash came in', () => {
+    expect(validateEntry(
+      { entry_date: '2026-09-24', type: 'expense', wallet: 'auditor_cash', amount: 1000, category: 'Supplies' },
+      [opening]
+    )).toEqual({ ok: true })
+  })
+
+  it('ignores float noise when spending the exact balance', () => {
+    const entries = [
+      row({ id: 'a', type: 'opening_cash', wallet: 'auditor_cash', amount: 0.1 }),
+      row({ id: 'b', type: 'pos_remittance', wallet: 'auditor_cash', amount: 0.2 })
+    ]
+    expect(validateRemoval([], entries)).toEqual({ ok: true })
+    expect(validateEntry(
+      { entry_date: '2026-09-21', type: 'owner_remittance', wallet: 'auditor_cash', amount: 0.3 },
+      entries
+    )).toEqual({ ok: true })
+  })
+
+  it('blocks deleting cash that later spending depends on', () => {
+    const expense = row({ id: 'e', type: 'expense', wallet: 'auditor_cash', amount: 800, category: 'Labor', entry_date: '2026-09-25' })
+    const result = validateRemoval(['o'], [opening, expense])
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain("Can't delete")
+    expect(validateRemoval(['e'], [opening, expense])).toEqual({ ok: true })
+  })
+
+  it('still allows deletes when the ledger was already negative', () => {
+    const badExpense = row({ id: 'e', type: 'expense', wallet: 'auditor_cash', amount: 800, category: 'Labor', entry_date: '2026-09-20' })
+    const remit = row({ id: 'r', type: 'pos_remittance', wallet: 'auditor_cash', amount: 50, entry_date: '2026-09-26' })
+    expect(validateRemoval(['e'], [opening, badExpense, remit])).toEqual({ ok: true })
   })
 })

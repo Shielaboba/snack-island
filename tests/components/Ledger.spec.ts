@@ -158,4 +158,25 @@ describe('Ledger.vue', () => {
     expect(el.querySelector('[data-testid="auditor-remaining"]')?.textContent).toContain('3,000.00')
     app.unmount()
   })
+
+  it('sends only one create when Save is clicked twice quickly', async () => {
+    let resolveCreate: () => void = () => {}
+    create.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveCreate = resolve }))
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="add-entry-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    const amount = document.querySelector('[data-testid="ledger-amount"]') as HTMLInputElement
+    amount.value = '100'
+    amount.dispatchEvent(new Event('input'))
+    const submit = document.querySelector('[data-testid="ledger-submit"]') as HTMLButtonElement
+    submit.click()
+    submit.click()
+    await nextTick()
+    expect(create).toHaveBeenCalledTimes(1)
+    resolveCreate()
+    await nextTick()
+    app.unmount()
+  })
 })

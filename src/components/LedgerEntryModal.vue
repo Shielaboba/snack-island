@@ -9,7 +9,7 @@
           </div>
           <button class="close-btn" type="button" aria-label="Close modal" @click="emit('close')">×</button>
         </div>
-        <form class="modal-body" @submit.prevent="onSubmit">
+        <form class="modal-body" novalidate @submit.prevent="onSubmit">
           <div class="form-grid">
             <div class="form-section">
               <label class="form-label">Date <span class="required">*</span></label>
@@ -54,7 +54,12 @@
             </div>
             <div v-if="showCategory" class="form-section">
               <label class="form-label">Category <span class="required">*</span></label>
-              <select v-model="form.category" class="form-select" data-testid="ledger-category" required>
+              <select
+                :value="form.category ?? ''"
+                class="form-select"
+                data-testid="ledger-category"
+                @change="onCategoryChange"
+              >
                 <option v-for="category in LEDGER_EXPENSE_CATEGORIES" :key="category" :value="category">
                   {{ category }}
                 </option>
@@ -63,13 +68,13 @@
             <div class="form-section">
               <label class="form-label">Amount (₱) <span class="required">*</span></label>
               <input
-                v-model.number="form.amount"
+                :value="form.amount || ''"
                 type="number"
                 min="0"
                 step="0.01"
                 class="form-input"
                 data-testid="ledger-amount"
-                required
+                @input="onAmountInput"
               />
             </div>
           </div>
@@ -81,7 +86,7 @@
 
           <div class="modal-footer">
             <button class="btn btn-secondary" type="button" @click="emit('close')">Cancel</button>
-            <button class="btn btn-primary" type="submit" data-testid="ledger-submit">Save</button>
+            <button class="btn btn-primary" type="submit" data-testid="ledger-submit" @click.prevent="onSubmit">Save</button>
           </div>
         </form>
       </div>
@@ -181,6 +186,15 @@ const title = computed(() => {
 
 function onTypeChange(event: Event) {
   form.type = (event.target as HTMLSelectElement).value as LedgerEntryType
+}
+
+function onAmountInput(event: Event) {
+  form.amount = Number((event.target as HTMLInputElement).value)
+}
+
+function onCategoryChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  form.category = (value || null) as CreateLedgerEntryInput['category']
 }
 
 function onSubmit() {

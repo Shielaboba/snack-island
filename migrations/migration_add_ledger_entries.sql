@@ -56,14 +56,18 @@ COMMENT ON TABLE ledger_entries IS 'Manual auditor cash book. Independent of ord
 
 ALTER TABLE ledger_entries ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read ledger entries" ON ledger_entries;
 CREATE POLICY "Allow read ledger entries"
   ON ledger_entries FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Allow insert ledger entries" ON ledger_entries;
 CREATE POLICY "Allow insert ledger entries"
   ON ledger_entries FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow update ledger entries" ON ledger_entries;
 CREATE POLICY "Allow update ledger entries"
   ON ledger_entries FOR UPDATE USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow delete ledger entries" ON ledger_entries;
 CREATE POLICY "Allow delete ledger entries"
   ON ledger_entries FOR DELETE USING (true);

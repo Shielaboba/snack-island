@@ -94,6 +94,40 @@ describe('LedgerEntryModal', () => {
     app.unmount()
   })
 
+  it('labels pos_remittance as Cart Cash Remittance and shows the two cash-in fields', async () => {
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    const option = [...type.querySelectorAll('option')].find((o) => o.value === 'pos_remittance')
+    expect(option?.textContent).toBe('Cart Cash Remittance')
+    expect(document.querySelector('[data-testid="ledger-total-sales"]')).toBeNull()
+    type.value = 'pos_remittance'
+    type.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(document.querySelector('[data-testid="ledger-amount"]')).toBeNull()
+    const sales = document.querySelector('[data-testid="ledger-total-sales"]') as HTMLInputElement
+    const petty = document.querySelector('[data-testid="ledger-petty-returned"]') as HTMLInputElement
+    expect(sales).not.toBeNull()
+    expect(petty).not.toBeNull()
+    expect(document.body.textContent).toContain('Total Sales')
+    expect(document.body.textContent).toContain('Petty Cash Returned')
+    sales.value = '1800'
+    sales.dispatchEvent(new Event('input'))
+    petty.value = '250.50'
+    petty.dispatchEvent(new Event('input'))
+    await nextTick()
+    ;(document.querySelector('[data-testid="ledger-submit"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(getSubmitted()).toEqual(expect.objectContaining({
+      type: 'pos_remittance',
+      wallet: 'auditor_cash',
+      total_sales: 1800,
+      petty_cash_returned: 250.5,
+      amount: 2050.5
+    }))
+    app.unmount()
+  })
+
   it('offers expense and GCash wallets and locks GCash remittance', async () => {
     const { app } = mountModal({ isOpen: true, mode: 'add' })
     await nextTick()

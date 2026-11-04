@@ -67,7 +67,7 @@
                 </option>
               </select>
             </div>
-            <div class="form-section">
+            <div v-if="!isCartRemittance" class="form-section">
               <label class="form-label">Amount (₱) <span class="required">*</span></label>
               <input
                 v-model="amountText"
@@ -75,6 +75,29 @@
                 inputmode="decimal"
                 class="form-input"
                 data-testid="ledger-amount"
+              />
+            </div>
+          </div>
+
+          <div v-if="isCartRemittance" class="form-grid">
+            <div class="form-section">
+              <label class="form-label">Total Sales (₱) <span class="required">*</span></label>
+              <input
+                v-model="totalSalesText"
+                type="text"
+                inputmode="decimal"
+                class="form-input"
+                data-testid="ledger-total-sales"
+              />
+            </div>
+            <div class="form-section">
+              <label class="form-label">Petty Cash Returned (₱) <span class="required">*</span></label>
+              <input
+                v-model="pettyReturnedText"
+                type="text"
+                inputmode="decimal"
+                class="form-input"
+                data-testid="ledger-petty-returned"
               />
             </div>
           </div>
@@ -126,6 +149,8 @@ const props = defineProps<{
 }>()
 
 const amountText = ref('')
+const totalSalesText = ref('')
+const pettyReturnedText = ref('')
 
 const emit = defineEmits<{
   submit: [value: CreateLedgerEntryInput]
@@ -161,6 +186,8 @@ watch(
       form.category = null
       form.note = ''
       amountText.value = ''
+      totalSalesText.value = ''
+      pettyReturnedText.value = ''
       return
     }
     if (props.mode === 'edit' && props.entry) {
@@ -171,6 +198,17 @@ watch(
       form.category = props.entry.category
       form.note = props.entry.note ?? ''
       amountText.value = String(props.entry.amount)
+      if (props.entry.type === 'pos_remittance') {
+        totalSalesText.value =
+          props.entry.total_sales != null ? String(props.entry.total_sales) : ''
+        pettyReturnedText.value =
+          props.entry.petty_cash_returned != null
+            ? String(props.entry.petty_cash_returned)
+            : String(props.entry.amount)
+      } else {
+        totalSalesText.value = ''
+        pettyReturnedText.value = ''
+      }
       return
     }
     form.entry_date = manilaYmd(new Date())
@@ -180,6 +218,8 @@ watch(
     form.category = null
     form.note = ''
     amountText.value = ''
+    totalSalesText.value = ''
+    pettyReturnedText.value = ''
   },
   { immediate: true }
 )
@@ -194,6 +234,7 @@ watch(
 )
 
 const showCategory = computed(() => form.type === 'expense')
+const isCartRemittance = computed(() => form.type === 'pos_remittance')
 const walletLocked = computed(
   () =>
     auditorLockedTypes.includes(form.type) ||
@@ -219,13 +260,19 @@ function onCategoryChange(event: Event) {
 
 function onSubmit() {
   if (props.saving) return
+  const totalSales = isCartRemittance.value ? Number(totalSalesText.value) : null
+  const pettyReturned = isCartRemittance.value ? Number(pettyReturnedText.value) : null
   emit('submit', {
     entry_date: form.entry_date,
     type: form.type,
     wallet: form.wallet as LedgerWallet,
-    amount: Number(amountText.value),
+    amount: isCartRemittance.value
+      ? Number(totalSales) + Number(pettyReturned)
+      : Number(amountText.value),
     category: form.type === 'expense' ? form.category : null,
-    note: form.note || null
+    note: form.note || null,
+    total_sales: totalSales,
+    petty_cash_returned: pettyReturned
   })
 }
 </script>

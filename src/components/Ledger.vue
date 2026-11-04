@@ -16,24 +16,41 @@
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-content">
-          <span class="stat-label">Auditor cash remaining</span>
-          <span class="stat-value" data-testid="auditor-remaining">₱{{ formatCurrency(auditorRemaining) }}</span>
+      <button
+        v-for="card in walletCards"
+        :key="card.wallet"
+        type="button"
+        class="stat-card"
+        :class="[card.tone, { active: walletFilter === card.wallet }]"
+        :data-testid="card.cardTestId"
+        @click="toggleWalletFilter(card.wallet)"
+      >
+        <div class="stat-icon" :class="card.tone" aria-hidden="true">
+          <svg v-if="card.wallet === 'auditor_cash'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+            <circle cx="12" cy="12" r="2.5"></circle>
+            <path d="M6 12h.01M18 12h.01"></path>
+          </svg>
+          <svg v-else-if="card.wallet === 'expense'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 7H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
+            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
+            <path d="M12 12v.01"></path>
+          </svg>
+          <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="6" y="2" width="12" height="20" rx="2"></rect>
+            <path d="M12 18h.01"></path>
+          </svg>
         </div>
-      </div>
-      <div class="stat-card">
         <div class="stat-content">
-          <span class="stat-label">Expense wallet remaining</span>
-          <span class="stat-value" data-testid="expense-remaining">₱{{ formatCurrency(expenseRemaining) }}</span>
+          <span class="stat-label">{{ card.label }}</span>
+          <span
+            class="stat-value"
+            :class="{ negative: card.amount < 0 }"
+            :data-testid="card.amountTestId"
+          >₱{{ formatCurrency(card.amount) }}</span>
+          <span class="stat-hint">{{ card.hint }}</span>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-content">
-          <span class="stat-label">GCash remaining</span>
-          <span class="stat-value" data-testid="gcash-remaining">₱{{ formatCurrency(gcashRemaining) }}</span>
-        </div>
-      </div>
+      </button>
     </div>
 
     <div class="week-strip">
@@ -53,7 +70,7 @@
       </div>
       <div class="filter-group">
         <label class="filter-label">Wallet</label>
-        <select v-model="walletFilter" class="filter-select">
+        <select v-model="walletFilter" class="filter-select" data-testid="wallet-filter">
           <option value="">All wallets</option>
           <option v-for="wallet in LEDGER_WALLETS" :key="wallet" :value="wallet">
             {{ ledgerWalletLabel(wallet) }}
@@ -95,7 +112,13 @@
           <td>{{ ledgerTypeLabel(row.type) }}</td>
           <td>{{ row.category || '—' }}</td>
           <td>{{ ledgerWalletLabel(row.wallet) }}</td>
-          <td>{{ signedAmount(row) }}</td>
+          <td>
+            <div>{{ signedAmount(row) }}</div>
+            <div v-if="row.type === 'pos_remittance'" class="amount-split">
+              Sales ₱{{ formatCurrency(row.total_sales ?? 0) }}
+              · Petty ₱{{ formatCurrency(row.petty_cash_returned ?? row.amount) }}
+            </div>
+          </td>
           <td>₱{{ formatCurrency(dailyRemaining(entries, row.wallet, row.entry_date)) }}</td>
           <td>{{ row.note || '—' }}</td>
           <td>
@@ -123,7 +146,7 @@ import { computed, onMounted, ref } from 'vue'
 import LedgerEntryModal from './LedgerEntryModal.vue'
 import { authService } from '../services/authService'
 import { ledgerService } from '../services/ledgerService'
-import { LEDGER_ENTRY_TYPES, LEDGER_WALLETS, type CreateLedgerEntryInput, type LedgerEntry } from '../models/Ledger'
+import { LEDGER_ENTRY_TYPES, LEDGER_WALLETS, type CreateLedgerEntryInput, type LedgerEntry, type LedgerWallet } from '../models/Ledger'
 import {
   dailyRemaining,
   entriesInDateRange,
@@ -151,6 +174,35 @@ const typeFilter = ref('')
 const auditorRemaining = computed(() => walletRemaining(entries.value, 'auditor_cash'))
 const expenseRemaining = computed(() => walletRemaining(entries.value, 'expense'))
 const gcashRemaining = computed(() => walletRemaining(entries.value, 'gcash'))
+const walletCards = computed(() => [
+  {
+    wallet: 'auditor_cash' as LedgerWallet,
+    tone: 'auditor',
+    label: 'Auditor cash',
+    hint: 'Held by auditor',
+    amount: auditorRemaining.value,
+    cardTestId: 'auditor-card',
+    amountTestId: 'auditor-remaining'
+  },
+  {
+    wallet: 'expense' as LedgerWallet,
+    tone: 'expense',
+    label: 'Expense wallet',
+    hint: 'Operating spends',
+    amount: expenseRemaining.value,
+    cardTestId: 'expense-card',
+    amountTestId: 'expense-remaining'
+  },
+  {
+    wallet: 'gcash' as LedgerWallet,
+    tone: 'gcash',
+    label: 'GCash',
+    hint: 'Digital wallet',
+    amount: gcashRemaining.value,
+    cardTestId: 'gcash-card',
+    amountTestId: 'gcash-remaining'
+  }
+])
 const summary = computed(() => weekSummary(entries.value, week))
 const visibleRows = computed(() => {
   let rows = entriesInDateRange(
@@ -187,6 +239,10 @@ function signedAmount(row: LedgerEntry): string {
   const value = entryDelta(row)[row.wallet]
   const abs = formatCurrency(Math.abs(value))
   return value < 0 ? `-₱${abs}` : `₱${abs}`
+}
+
+function toggleWalletFilter(wallet: LedgerWallet) {
+  walletFilter.value = walletFilter.value === wallet ? '' : wallet
 }
 
 function openAdd() {
@@ -294,18 +350,79 @@ onMounted(load)
 }
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1.5rem;
   margin-bottom: 1.5rem;
 }
 .stat-card {
   background: white;
-  padding: 1.5rem;
-  border-radius: 12px;
+  padding: 1.35rem 1.5rem;
+  border-radius: 16px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
-.stat-label { font-size: 0.85rem; color: #6c757d; }
-.stat-value { font-size: 1.5rem; font-weight: 700; color: #212529; }
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+.stat-card.active {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+.stat-card.auditor.active { border-color: #667eea; }
+.stat-card.expense.active { border-color: #f6a54c; }
+.stat-card.gcash.active { border-color: #007dff; }
+.stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+}
+.stat-icon.auditor {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.stat-icon.expense {
+  background: linear-gradient(135deg, #f6a54c 0%, #ee7b3a 100%);
+}
+.stat-icon.gcash {
+  background: linear-gradient(135deg, #007dff 0%, #00c2ff 100%);
+}
+.stat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.stat-label {
+  font-size: 0.85rem;
+  color: #6c757d;
+  font-weight: 600;
+}
+.stat-value {
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #212529;
+  letter-spacing: -0.02em;
+}
+.stat-value.negative { color: #dc3545; }
+.stat-hint {
+  font-size: 0.78rem;
+  color: #868e96;
+  margin-top: 0.1rem;
+}
 .week-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -350,6 +467,12 @@ onMounted(load)
   border-bottom: 1px solid #f1f3f5;
 }
 .ledger-table th { color: #6c757d; font-size: 0.8rem; text-transform: uppercase; }
+.amount-split {
+  font-size: 0.75rem;
+  color: #868e96;
+  font-weight: 500;
+  margin-top: 0.2rem;
+}
 .link-btn {
   background: none;
   border: none;
@@ -360,6 +483,7 @@ onMounted(load)
 }
 @media (max-width: 768px) {
   .page-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+  .stats-grid,
   .week-strip { grid-template-columns: 1fr; }
 }
 </style>

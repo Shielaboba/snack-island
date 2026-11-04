@@ -33,6 +33,21 @@ const walletSql = readFileSync(
   'utf8'
 )
 
+const cartSql = readFileSync(
+  resolve(process.cwd(), 'migrations/migration_ledger_cart_cash_remittance.sql'),
+  'utf8'
+)
+
+describe('ledger cart cash remittance migration', () => {
+  it('adds total_sales and petty_cash_returned without touching other tables', () => {
+    expect(cartSql).toMatch(/total_sales/)
+    expect(cartSql).toMatch(/petty_cash_returned/)
+    expect(cartSql).toMatch(/ALTER TABLE ledger_entries/)
+    expect(cartSql).not.toMatch(/ALTER TABLE\s+(orders|expenses|store_sessions|order_items|inventory)/i)
+    expect(cartSql).not.toMatch(/DROP TABLE/i)
+  })
+})
+
 describe('ledger wallet follow-up migration', () => {
   it('remaps petty cash to expense wallet without touching other tables', () => {
     expect(walletSql).toMatch(/fund_expense/)

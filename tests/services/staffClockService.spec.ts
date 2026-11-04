@@ -278,6 +278,31 @@ describe('staffClockService approvals and overrides', () => {
       expect.objectContaining({ clock_in_at: expect.anything() })
     )
   })
+
+  it('records OT as approved when admin or auditor marks it for staff', async () => {
+    const forgot = {
+      ...openShai,
+      clock_in_at: '2026-11-04T04:00:00.000Z',
+      clock_out_at: '2026-11-04T14:00:00.000Z',
+      clock_out_status: 'approved' as const
+    }
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: [{ ...forgot, ot_requested: true, ot_status: 'approved' }],
+      error: null
+    })
+    const mockEq = vi.fn().mockReturnValue({ select: mockSelect })
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq })
+    vi.mocked(supabase.from).mockReturnValue({ update: mockUpdate } as any)
+
+    await staffClockService.recordOt(forgot, 'ana')
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ot_requested: true,
+        ot_status: 'approved',
+        updated_by: 'ana'
+      })
+    )
+  })
 })
 
 describe('staffClockService.remove', () => {

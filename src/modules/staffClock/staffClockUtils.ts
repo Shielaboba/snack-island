@@ -13,6 +13,8 @@ export const SELFIE_JPEG_QUALITY = 0.7
 const HOUR_MS = 60 * 60 * 1000
 export const STANDARD_SHIFT_HOURS = 8
 export const MIN_OT_HOURS = 2
+export const OT_REQUEST_HOUR_MANILA = 22
+export const SCHEDULED_START_HOUR_MANILA = 14
 
 export function isOpenShift(shift: StaffClockShift): boolean {
   if (shift.clock_in_status === 'declined') return false
@@ -33,8 +35,19 @@ export function latestShiftFor(
 ): StaffClockShift | null {
   const rows = shifts
     .filter((row) => row.staff_name === name)
-    .sort((a, b) => Date.parse(b.clock_in_at) - Date.parse(a.clock_in_at))
+    .sort((a, b) => {
+      const byIn = Date.parse(b.clock_in_at) - Date.parse(a.clock_in_at)
+      if (byIn !== 0) return byIn
+      return Date.parse(b.created_at) - Date.parse(a.created_at)
+    })
   return rows[0] ?? null
+}
+
+export function activeShiftFor(
+  name: StaffName,
+  shifts: StaffClockShift[]
+): StaffClockShift | null {
+  return openShiftFor(name, shifts) ?? latestShiftFor(name, shifts)
 }
 
 export function canClockIn(name: StaffName, shifts: StaffClockShift[]): boolean {
@@ -112,12 +125,63 @@ export function recordedOvertimeHours(
   return hours > 0 ? hours : null
 }
 
+export function manilaYmd(iso: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date(iso))
+}
+
+export function otRequestOpensAt(clockInAt: string): Date {
+  return new Date(`${manilaYmd(clockInAt)}T${String(OT_REQUEST_HOUR_MANILA).padStart(2, '0')}:00:00+08:00`)
+}
+
+export function isAfterTenPmManila(clockInAt: string, now: Date = new Date()): boolean {
+  return now.getTime() >= otRequestOpensAt(clockInAt).getTime()
+}
+
+export function isEarlyClockIn(clockInAt: string): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      hourCycle: 'h23'
+    })
+      .formatToParts(new Date(clockInAt))
+      .find((part) => part.type === 'hour')?.value ?? '99'
+  )
+  return hour < SCHEDULED_START_HOUR_MANILA
+}
+
+function otAlreadyFiled(shift: StaffClockShift): boolean {
+  return shift.ot_status === 'pending' || shift.ot_status === 'approved'
+}
+
 export function canRequestOt(
   shift: StaffClockShift | null | undefined,
   now: Date = new Date()
 ): boolean {
-  if (!shift || !isOpenShift(shift)) return false
-  if (shift.ot_status === 'pending' || shift.ot_status === 'approved') return false
+  if (!shift || !isOpenShift(shift) || otAlreadyFiled(shift)) return false
+  return isEarlyClockIn(shift.clock_in_at) || isAfterTenPmManila(shift.clock_in_at, now)
+}
+
+export function shouldPromptOtOnClockOut(
+  shift: StaffClockShift | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!shift || !isOpenShift(shift) || otAlreadyFiled(shift)) return false
+  return rawOvertimeHours(shift, now) >= MIN_OT_HOURS
+}
+
+export function canRecordOt(
+  shift: StaffClockShift | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!shift || shift.clock_in_status === 'declined' || otAlreadyFiled(shift)) return false
+  if (isEarlyClockIn(shift.clock_in_at)) return true
+  if (isOpenShift(shift) && isAfterTenPmManila(shift.clock_in_at, now)) return true
   return rawOvertimeHours(shift, now) >= MIN_OT_HOURS
 }
 
@@ -128,13 +192,24 @@ export function validateRequestOt(
 ): ClockValidationResult {
   const open = openShiftFor(name, shifts)
   if (!open) return { ok: false, message: `${name} is not clocked in.` }
-  if (open.ot_status === 'pending' || open.ot_status === 'approved') {
+  if (otAlreadyFiled(open)) {
     return { ok: false, message: `${name} already requested OT.` }
   }
-  if (rawOvertimeHours(open, now) < MIN_OT_HOURS) {
-    return { ok: false, message: 'OT is at least 2 hours. Request after 10 hours on the clock.' }
+  if (!isEarlyClockIn(open.clock_in_at) && !isAfterTenPmManila(open.clock_in_at, now)) {
+    return { ok: false, message: 'Request OT if you came in before 2:00 PM or after 10:00 PM.' }
   }
   return { ok: true }
+}
+
+export function validateRecordOt(
+  shift: StaffClockShift,
+  now: Date = new Date()
+): ClockValidationResult {
+  if (canRecordOt(shift, now)) return { ok: true }
+  return {
+    ok: false,
+    message: 'OT can only be recorded for extra time (before 2:00 PM or after 10:00 PM, minimum 2 hours).'
+  }
 }
 
 export function otStatusCopy(shift: StaffClockShift | null): string | null {

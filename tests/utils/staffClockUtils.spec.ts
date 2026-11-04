@@ -10,13 +10,19 @@ import {
   formatHours,
   formatManilaClock,
   fromManilaDateTimeLocal,
+  activeShiftFor,
   isOpenShift,
   nextClockAction,
   openShiftFor,
   MIN_OT_HOURS,
+  canRecordOt,
   canRequestOt,
+  isEarlyClockIn,
   overtimeHours,
   recordedOvertimeHours,
+  shouldPromptOtOnClockOut,
+  validateRecordOt,
+  validateRequestOt,
   selfieTargetSize,
   shiftHours,
   toManilaDateTimeLocal,
@@ -85,6 +91,24 @@ describe('open shift', () => {
         })
       )
     ).toBe(false)
+  })
+
+  it('uses the open shift for status even if a declined punch is newer', () => {
+    const declined = shift({
+      id: 'declined',
+      clock_in_at: '2026-11-04T08:00:00.000Z',
+      clock_in_status: 'declined'
+    })
+    const open = shift({
+      id: 'open',
+      clock_in_at: '2026-11-04T07:00:00.000Z',
+      clock_in_status: 'approved'
+    })
+    expect(activeShiftFor('Shai', [declined, open])?.id).toBe('open')
+    expect(clockStatusCopy(activeShiftFor('Shai', [declined, open]))).toBe(
+      'Clocked in · approved'
+    )
+    expect(nextClockAction('Shai', [declined, open])).toBe('clock_out')
   })
 
   it('lets both people be open at once', () => {
@@ -195,12 +219,16 @@ describe('hours and overtime', () => {
     expect(shiftHours(shift({}))).toBeNull()
   })
 
-  it('lets staff request OT only after 2 hours past 8, and time still counts as open', () => {
-    const now = new Date('2026-11-04T16:00:00.000Z')
-    const open = shift({ clock_in_at: '2026-11-04T06:00:00.000Z' })
-    expect(canRequestOt(open, now)).toBe(true)
-    expect(isOpenShift(open)).toBe(true)
-    expect(canRequestOt(open, new Date('2026-11-04T14:30:00.000Z'))).toBe(false)
+  it('lets staff request OT after 10:00 PM or if they clocked in before 2:00 PM', () => {
+    const onSchedule = shift({ clock_in_at: '2026-11-04T06:00:00.000Z' })
+    expect(isEarlyClockIn(onSchedule.clock_in_at)).toBe(false)
+    expect(canRequestOt(onSchedule, new Date('2026-11-04T13:59:00.000Z'))).toBe(false)
+    expect(canRequestOt(onSchedule, new Date('2026-11-04T14:00:00.000Z'))).toBe(true)
+    expect(canRequestOt(onSchedule, new Date('2026-11-04T17:00:00.000Z'))).toBe(true)
+    const early = shift({ clock_in_at: '2026-11-04T04:00:00.000Z' })
+    expect(isEarlyClockIn(early.clock_in_at)).toBe(true)
+    expect(canRequestOt(early, new Date('2026-11-04T05:00:00.000Z'))).toBe(true)
+    expect(validateRequestOt('Shai', [early], new Date('2026-11-04T05:00:00.000Z')).ok).toBe(true)
     expect(
       canRequestOt(
         shift({
@@ -208,7 +236,7 @@ describe('hours and overtime', () => {
           ot_requested: true,
           ot_status: 'pending'
         }),
-        now
+        new Date('2026-11-04T14:00:00.000Z')
       )
     ).toBe(false)
     expect(
@@ -218,9 +246,59 @@ describe('hours and overtime', () => {
           ot_requested: true,
           ot_status: 'declined'
         }),
-        now
+        new Date('2026-11-04T14:00:00.000Z')
       )
     ).toBe(true)
+  })
+
+  it('prompts at clock-out when extra time is already 2 hours and OT was not requested', () => {
+    const extra = shift({
+      clock_in_at: '2026-11-04T04:00:00.000Z'
+    })
+    expect(shouldPromptOtOnClockOut(extra, new Date('2026-11-04T14:00:00.000Z'))).toBe(true)
+    expect(shouldPromptOtOnClockOut(extra, new Date('2026-11-04T10:00:00.000Z'))).toBe(false)
+    expect(
+      shouldPromptOtOnClockOut(
+        shift({
+          clock_in_at: '2026-11-04T04:00:00.000Z',
+          ot_requested: true,
+          ot_status: 'pending'
+        }),
+        new Date('2026-11-04T14:00:00.000Z')
+      )
+    ).toBe(false)
+  })
+
+  it('lets admin or auditor record OT when staff did not request it', () => {
+    const earlyClosed = shift({
+      clock_in_at: '2026-11-04T04:00:00.000Z',
+      clock_out_at: '2026-11-04T14:00:00.000Z',
+      clock_out_status: 'approved'
+    })
+    expect(canRecordOt(earlyClosed, new Date('2026-11-05T01:00:00.000Z'))).toBe(true)
+    const regular = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T14:00:00.000Z',
+      clock_out_status: 'approved'
+    })
+    expect(canRecordOt(regular, new Date('2026-11-05T01:00:00.000Z'))).toBe(false)
+    const lateClosed = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T16:00:00.000Z',
+      clock_out_status: 'approved'
+    })
+    expect(canRecordOt(lateClosed)).toBe(true)
+    expect(
+      canRecordOt(
+        shift({
+          clock_in_at: '2026-11-04T04:00:00.000Z',
+          ot_requested: true,
+          ot_status: 'approved'
+        })
+      )
+    ).toBe(false)
+    expect(validateRecordOt(earlyClosed).ok).toBe(true)
+    expect(validateRecordOt(regular, new Date('2026-11-05T01:00:00.000Z')).ok).toBe(false)
   })
 
   it('formats hours for the attendance table', () => {

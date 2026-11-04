@@ -153,7 +153,7 @@ Remaining balances are calculated from the lines entered. See `docs/superpowers/
 
 ### ⏱️ H. Staff clock
 
-Shai and Den share one staff login. They pick a name, take a compressed selfie, and clock in or out. Time starts at capture. Admin and auditor approve or decline on Attendance without changing the punch time. OT is recorded only if staff request it (minimum 2 hours past 8); time keeps running while OT is pending. See `docs/superpowers/specs/2026-11-04-staff-clock-design.md`.
+Shai and Den share one staff login. They pick a name, take a compressed selfie, and clock in or out. Time starts at capture. Admin and auditor approve or decline on Attendance without changing the punch time. OT is `hours − 8` (early in and late out share one pool), recorded if staff request it (before 2:00 PM or after 10:00 PM) or if admin/auditor record it for them (minimum 2 hours past 8). Attendance has a Payroll Calculator: days × rate per day, plus OT at half a day's pay per 2 recorded OT hours, minus deduction. See `docs/superpowers/specs/2026-11-04-staff-clock-design.md`.
 
 ---
 

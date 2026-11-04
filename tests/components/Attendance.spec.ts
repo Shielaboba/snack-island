@@ -27,6 +27,7 @@ const closed: StaffClockShift = {
 const list = vi.fn(async () => [closed])
 const setPunchStatus = vi.fn()
 const setOtStatus = vi.fn()
+const recordOt = vi.fn()
 const photoUrl = vi.fn((path: string) => `https://cdn.example/${path}`)
 
 vi.mock('../../src/services/staffClockService', () => ({
@@ -34,6 +35,7 @@ vi.mock('../../src/services/staffClockService', () => ({
     list: (...args: unknown[]) => list(...args),
     setPunchStatus: (...args: unknown[]) => setPunchStatus(...args),
     setOtStatus: (...args: unknown[]) => setOtStatus(...args),
+    recordOt: (...args: unknown[]) => recordOt(...args),
     updateTimes: vi.fn(),
     createMissedPunch: vi.fn(),
     remove: vi.fn(),
@@ -61,8 +63,10 @@ describe('Attendance.vue', () => {
     list.mockClear()
     setPunchStatus.mockClear()
     setOtStatus.mockClear()
+    recordOt.mockClear()
     setPunchStatus.mockResolvedValue(closed)
     setOtStatus.mockResolvedValue(closed)
+    recordOt.mockResolvedValue({ ...closed, ot_requested: true, ot_status: 'approved' })
     list.mockResolvedValue([closed])
   })
 
@@ -114,6 +118,40 @@ describe('Attendance.vue', () => {
     ;(el.querySelector('[data-testid="add-missed-btn"]') as HTMLButtonElement).click()
     await nextTick()
     expect(document.querySelector('[data-testid="clock-edit-modal"]')).not.toBeNull()
+    app.unmount()
+  })
+
+  it('opens the payroll calculator beside add missed punch', async () => {
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    const payrollBtn = el.querySelector('[data-testid="payroll-btn"]') as HTMLButtonElement
+    expect(payrollBtn).not.toBeNull()
+    expect(payrollBtn.textContent).toMatch(/Payroll Calculator/i)
+    payrollBtn.click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="payroll-modal"]')).not.toBeNull()
+    app.unmount()
+  })
+
+  it('lets admin or auditor record OT when staff did not request it', async () => {
+    const forgot: StaffClockShift = {
+      ...closed,
+      ot_requested: false,
+      ot_status: null,
+      ot_requested_at: null,
+      clock_in_at: '2026-11-04T04:00:00.000Z',
+      clock_out_at: '2026-11-04T14:00:00.000Z'
+    }
+    list.mockResolvedValue([forgot])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    expect(el.querySelector('[data-testid="record-ot-s1"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="approve-ot-s1"]')).toBeNull()
+    ;(el.querySelector('[data-testid="record-ot-s1"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(recordOt).toHaveBeenCalledWith(forgot, 'ana')
     app.unmount()
   })
 })

@@ -1,16 +1,21 @@
 <template>
   <div class="attendance-page">
     <div class="page-header">
-      <div class="header-text">
+      <div class="header-top">
         <h1>Attendance</h1>
-        <p>Approve or decline without changing punch time. OT is recorded only if staff request it (minimum 2 hours).</p>
+        <div class="header-actions">
+          <button class="btn-secondary" type="button" data-testid="payroll-btn" @click="payrollOpen = true">
+            Payroll Calculator
+          </button>
+          <button class="btn-primary" type="button" data-testid="add-missed-btn" @click="openAdd">
+            Add missed punch
+          </button>
+        </div>
       </div>
-      <button class="btn-primary" type="button" data-testid="add-missed-btn" @click="openAdd">
-        Add missed punch
-      </button>
+      <p>Approve or decline without changing punch time. OT is recorded if staff request it, or if you record it for them (minimum 2 hours).</p>
     </div>
 
-    <p v-if="error && !editOpen && !deleteOpen" class="error-state">{{ error }}</p>
+    <p v-if="error && !editOpen && !deleteOpen && !payrollOpen" class="error-state">{{ error }}</p>
     <p v-else-if="isLoading" class="empty-state">Loading attendance…</p>
     <p v-else-if="shifts.length === 0" class="empty-state">No punches yet.</p>
     <div v-else class="table-wrap">
@@ -117,6 +122,15 @@
                   >
                     Decline OT
                   </button>
+                  <button
+                    v-if="canRecordOt(row)"
+                    class="mini approve"
+                    type="button"
+                    :data-testid="`record-ot-${row.id}`"
+                    @click="markOt(row)"
+                  >
+                    Record OT
+                  </button>
                 </div>
               </div>
             </td>
@@ -168,6 +182,11 @@
       @close="closeDelete"
       @confirm="confirmDelete"
     />
+    <PayrollCalculatorModal
+      :is-open="payrollOpen"
+      :shifts="shifts"
+      @close="payrollOpen = false"
+    />
   </div>
 </template>
 
@@ -177,6 +196,7 @@ import type { PunchStatus, StaffClockShift } from '../models/StaffClock'
 import { authService } from '../services/authService'
 import { staffClockService } from '../services/staffClockService'
 import {
+  canRecordOt,
   errorMessage,
   formatHours,
   formatManilaDateTime,
@@ -187,6 +207,7 @@ import {
 import ClockPhotoModal from './ClockPhotoModal.vue'
 import ClockShiftEditModal from './ClockShiftEditModal.vue'
 import ClockShiftDeleteModal from './ClockShiftDeleteModal.vue'
+import PayrollCalculatorModal from './PayrollCalculatorModal.vue'
 
 const shifts = ref<StaffClockShift[]>([])
 const isLoading = ref(true)
@@ -198,6 +219,7 @@ const photoTitle = ref('')
 const editOpen = ref(false)
 const editMode = ref<'add' | 'edit'>('add')
 const editing = ref<StaffClockShift | null>(null)
+const payrollOpen = ref(false)
 const deleteOpen = ref(false)
 const pendingDelete = ref<StaffClockShift | null>(null)
 const deleteError = ref('')
@@ -272,6 +294,16 @@ async function setOt(id: string, status: PunchStatus) {
   }
 }
 
+async function markOt(row: StaffClockShift) {
+  error.value = ''
+  try {
+    await staffClockService.recordOt(row, actor())
+    await load()
+  } catch (err) {
+    error.value = errorMessage(err, 'Could not record OT.')
+  }
+}
+
 async function saveTimes(payload: {
   staff_name: StaffClockShift['staff_name']
   clock_in_at: string
@@ -325,19 +357,45 @@ onMounted(load)
 
 <style scoped>
 .attendance-page { padding: 0; color: #212529; }
-.page-header {
+.page-header { margin-bottom: 1.5rem; }
+.header-top {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
-  gap: 1rem;
+  gap: 10px 12px;
 }
-.header-text h1 { margin: 0 0 0.25rem; font-size: 2rem; color: #212529; font-weight: 700; }
-.header-text p { margin: 0; color: #6c757d; font-size: 0.95rem; }
-.btn-primary {
-  padding: 12px 24px;
+.header-top h1 {
+  margin: 0;
+  font-size: 2rem;
+  color: #212529;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.page-header > p { margin: 0.25rem 0 0; color: #6c757d; font-size: 0.95rem; }
+.header-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.btn-secondary {
+  padding: 10px 16px;
   border-radius: 10px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #e9ecef;
+  color: #495057;
+  border: none;
+  white-space: nowrap;
+}
+.btn-primary {
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -396,7 +454,4 @@ onMounted(load)
 .error-state,
 .empty-state { color: #6c757d; text-align: center; padding: 2rem; }
 .error-state { color: #c92a2a; }
-@media (max-width: 768px) {
-  .page-header { flex-direction: column; align-items: flex-start; }
-}
 </style>

@@ -13,6 +13,7 @@ import {
   openShiftFor,
   validateClockIn,
   validateClockOut,
+  validateRecordOt,
   validateRequestOt,
   validateShiftTimes
 } from '../modules/staffClock/staffClockUtils'
@@ -170,6 +171,31 @@ export const staffClockService = {
     throwIfError(error)
     const row = (data ?? [])[0] as StaffClockShift | undefined
     if (!row) throw new Error('OT request did not save.')
+    return row
+  },
+
+  async recordOt(
+    shift: StaffClockShift,
+    actor: string,
+    now: Date = new Date()
+  ): Promise<StaffClockShift> {
+    const check = validateRecordOt(shift, now)
+    if (!check.ok) throw new Error(check.message)
+    const at = now.toISOString()
+    const { data, error } = await supabase
+      .from(STAFF_CLOCK_TABLE)
+      .update({
+        ot_requested: true,
+        ot_status: 'approved',
+        ot_requested_at: at,
+        updated_by: actor,
+        updated_at: at
+      })
+      .eq('id', shift.id)
+      .select(SELECT_COLUMNS)
+    throwIfError(error)
+    const row = (data ?? [])[0] as StaffClockShift | undefined
+    if (!row) throw new Error('Could not record OT.')
     return row
   },
 

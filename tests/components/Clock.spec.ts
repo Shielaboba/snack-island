@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import Clock from '../../src/components/Clock.vue'
 import type { StaffClockShift } from '../../src/models/StaffClock'
@@ -74,6 +74,10 @@ describe('Clock.vue', () => {
     })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('lets staff pick Shai or Den and shows Clock in when not on the clock', async () => {
     const { el, app } = mountPage()
     await nextTick()
@@ -115,6 +119,31 @@ describe('Clock.vue', () => {
     app.unmount()
   })
 
+  it('keeps Clock out and approved status after a declined punch then a new approved in', async () => {
+    list.mockResolvedValue([
+      openShift({
+        id: 'declined',
+        clock_in_at: '2026-11-04T08:00:00.000Z',
+        clock_in_status: 'declined'
+      }),
+      openShift({
+        id: 'open',
+        clock_in_at: '2026-11-04T07:05:00.000Z',
+        clock_in_status: 'approved'
+      })
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    expect(el.querySelector('[data-testid="clock-out-btn"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="clock-in-btn"]')).toBeNull()
+    expect(el.querySelector('[data-testid="clock-status"]')?.textContent).toBe(
+      'Clocked in · approved'
+    )
+    expect(el.textContent).not.toMatch(/Clock-in declined/i)
+    app.unmount()
+  })
+
   it('lets them clock in again after a declined in', async () => {
     list.mockResolvedValue([openShift({ clock_in_status: 'declined' })])
     const { el, app } = mountPage()
@@ -125,27 +154,55 @@ describe('Clock.vue', () => {
     app.unmount()
   })
 
-  it('shows Request OT after 10 hours on the clock and keeps Clock out', async () => {
-    list.mockResolvedValue([
-      openShift({ clock_in_at: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString() })
-    ])
+  it('hides Request OT before 10:00 PM when they started at 2:00 PM', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-04T13:59:00.000Z'))
+    list.mockResolvedValue([openShift({ clock_in_at: '2026-11-04T06:00:00.000Z' })])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    expect(el.querySelector('[data-testid="request-ot-btn"]')).toBeNull()
+    expect(el.querySelector('[data-testid="clock-out-btn"]')).not.toBeNull()
+    app.unmount()
+    vi.useRealTimers()
+  })
+
+  it('shows Request OT when they clocked in before 2:00 PM', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-04T05:00:00.000Z'))
+    list.mockResolvedValue([openShift({ clock_in_at: '2026-11-04T04:00:00.000Z' })])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    expect(el.querySelector('[data-testid="request-ot-btn"]')).not.toBeNull()
+    app.unmount()
+    vi.useRealTimers()
+  })
+
+  it('shows Request OT after 10:00 PM Manila and keeps Clock out', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-04T14:00:00.000Z'))
+    list.mockResolvedValue([openShift({ clock_in_at: '2026-11-04T06:00:00.000Z' })])
     const { el, app } = mountPage()
     await nextTick()
     await nextTick()
     expect(el.querySelector('[data-testid="request-ot-btn"]')).not.toBeNull()
     expect(el.querySelector('[data-testid="clock-out-btn"]')).not.toBeNull()
     app.unmount()
+    vi.useRealTimers()
   })
 
   it('keeps time running after requesting OT while waiting for approval', async () => {
-    const tenHoursAgo = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString()
-    list.mockResolvedValue([openShift({ clock_in_at: tenHoursAgo })])
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-04T14:05:00.000Z'))
+    const clockInAt = '2026-11-04T06:00:00.000Z'
+    list.mockResolvedValue([openShift({ clock_in_at: clockInAt })])
     const { el, app } = mountPage()
     await nextTick()
     await nextTick()
     list.mockResolvedValue([
       openShift({
-        clock_in_at: tenHoursAgo,
+        clock_in_at: clockInAt,
         ot_requested: true,
         ot_status: 'pending'
       })
@@ -161,5 +218,47 @@ describe('Clock.vue', () => {
     expect(el.textContent).toMatch(/OT requested · waiting for approval/i)
     expect(el.textContent).toMatch(/on the clock/i)
     app.unmount()
+    vi.useRealTimers()
+  })
+
+  it('asks about OT at clock-out when they already have 2 extra hours', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-04T14:00:00.000Z'))
+    list.mockResolvedValue([openShift({ clock_in_at: '2026-11-04T04:00:00.000Z' })])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="clock-out-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(el.querySelector('[data-testid="clock-ot-prompt"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="clock-camera"]')).toBeNull()
+    app.unmount()
+    vi.useRealTimers()
+  })
+
+  it('requests OT then opens the camera from the clock-out prompt', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-04T14:00:00.000Z'))
+    list.mockResolvedValue([openShift({ clock_in_at: '2026-11-04T04:00:00.000Z' })])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="clock-out-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    list.mockResolvedValue([
+      openShift({
+        clock_in_at: '2026-11-04T04:00:00.000Z',
+        ot_requested: true,
+        ot_status: 'pending'
+      })
+    ])
+    ;(el.querySelector('[data-testid="clock-ot-prompt-yes"]') as HTMLButtonElement).click()
+    await vi.waitFor(() => {
+      expect(requestOt).toHaveBeenCalled()
+      expect(el.querySelector('[data-testid="clock-ot-prompt"]')).toBeNull()
+      expect(el.querySelector('[data-testid="clock-camera"]')).not.toBeNull()
+    })
+    app.unmount()
+    vi.useRealTimers()
   })
 })

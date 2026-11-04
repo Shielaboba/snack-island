@@ -17,7 +17,7 @@
       <option v-for="name in STAFF_NAMES" :key="name" :value="name">{{ name }}</option>
     </select>
 
-    <p v-if="error" class="error-state">{{ error }}</p>
+    <p v-if="error" class="error-state" data-testid="clock-error">{{ error }}</p>
 
     <div
       class="stage"
@@ -58,7 +58,7 @@
     </div>
 
     <button
-      v-if="!capturing && action === 'clock_in'"
+      v-if="!capturing && !otPromptOpen && action === 'clock_in'"
       class="btn-primary action-btn"
       type="button"
       data-testid="clock-in-btn"
@@ -68,7 +68,7 @@
       Clock in
     </button>
     <button
-      v-if="!capturing && showRequestOt"
+      v-if="!capturing && !otPromptOpen && showRequestOt"
       class="btn-secondary action-btn"
       type="button"
       data-testid="request-ot-btn"
@@ -78,20 +78,42 @@
       Request OT
     </button>
     <button
-      v-if="!capturing && action === 'clock_out'"
+      v-if="!capturing && !otPromptOpen && action === 'clock_out'"
       class="btn-primary action-btn"
       type="button"
       data-testid="clock-out-btn"
       :disabled="saving"
-      @click="startCapture('out')"
+      @click="onClockOutClick"
     >
       Clock out
     </button>
+
+    <div v-if="otPromptOpen" class="ot-prompt" data-testid="clock-ot-prompt">
+      <p>You have extra time. Request OT before clocking out?</p>
+      <button
+        class="btn-primary"
+        type="button"
+        data-testid="clock-ot-prompt-yes"
+        :disabled="saving"
+        @click="confirmOtThenClockOut"
+      >
+        Request OT
+      </button>
+      <button
+        class="btn-secondary"
+        type="button"
+        data-testid="clock-ot-prompt-no"
+        :disabled="saving"
+        @click="skipOtThenClockOut"
+      >
+        Clock out without OT
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { STAFF_NAMES, type StaffName } from '../models/StaffClock'
 import type { StaffClockShift } from '../models/StaffClock'
 import { authService } from '../services/authService'
@@ -103,9 +125,10 @@ import {
   errorMessage,
   formatManilaLive,
   isOpenShift,
-  latestShiftFor,
+  activeShiftFor,
   nextClockAction,
-  otStatusCopy
+  otStatusCopy,
+  shouldPromptOtOnClockOut
 } from '../modules/staffClock/staffClockUtils'
 
 const staffName = ref<StaffName>('Shai')
@@ -116,18 +139,22 @@ const saving = ref(false)
 const error = ref('')
 const liveTime = ref(formatManilaLive())
 const liveDate = ref('')
+const nowMs = ref(Date.now())
+const otPromptOpen = ref(false)
 const videoEl = ref<HTMLVideoElement | null>(null)
 let stream: MediaStream | null = null
 let tick: ReturnType<typeof setInterval> | null = null
 
 const actor = () => authService.getCurrentUser()?.username ?? 'staff'
 
-const relevantShift = computed(() => latestShiftFor(staffName.value, shifts.value))
+const relevantShift = computed(() => activeShiftFor(staffName.value, shifts.value))
 const action = computed(() => nextClockAction(staffName.value, shifts.value))
 const statusCopy = computed(() => clockStatusCopy(relevantShift.value))
 const otCopy = computed(() => otStatusCopy(relevantShift.value))
 const showRequestOt = computed(
-  () => action.value === 'clock_out' && canRequestOt(relevantShift.value)
+  () =>
+    action.value === 'clock_out' &&
+    canRequestOt(relevantShift.value, new Date(nowMs.value))
 )
 const elapsedCopy = computed(() => {
   const shift = relevantShift.value
@@ -140,6 +167,7 @@ const elapsedCopy = computed(() => {
 
 function refreshClock() {
   const now = new Date()
+  nowMs.value = now.getTime()
   liveTime.value = formatManilaLive(now)
   liveDate.value = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Manila',
@@ -163,20 +191,46 @@ function stopCamera() {
   if (videoEl.value) videoEl.value.srcObject = null
 }
 
+function onClockOutClick() {
+  const shift = relevantShift.value
+  if (shouldPromptOtOnClockOut(shift, new Date(nowMs.value))) {
+    otPromptOpen.value = true
+    return
+  }
+  startCapture('out')
+}
+
+async function confirmOtThenClockOut() {
+  otPromptOpen.value = false
+  await requestOt()
+  if (error.value) return
+  await startCapture('out')
+}
+
+function skipOtThenClockOut() {
+  otPromptOpen.value = false
+  startCapture('out')
+}
+
 async function startCapture(mode: 'in' | 'out') {
   error.value = ''
   captureMode.value = mode
   capturing.value = true
-  await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+  await nextTick()
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user' },
       audio: false
     })
-    if (videoEl.value) videoEl.value.srcObject = stream
   } catch (err) {
     capturing.value = false
     error.value = errorMessage(err, 'Camera is not available.')
+    return
+  }
+  try {
+    if (videoEl.value) videoEl.value.srcObject = stream
+  } catch {
+    // Camera stream still runs; preview may be blank in test stubs.
   }
 }
 
@@ -223,6 +277,7 @@ async function capture() {
 }
 
 watch(staffName, () => {
+  otPromptOpen.value = false
   cancelCapture()
 })
 
@@ -330,6 +385,20 @@ onUnmounted(() => {
 .btn-secondary { background: #e9ecef; color: #495057; }
 .btn-primary:disabled,
 .btn-secondary:disabled { opacity: 0.6; cursor: not-allowed; }
+.ot-prompt {
+  margin-top: 12px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+.ot-prompt p {
+  margin: 0 0 12px;
+  color: #495057;
+  font-weight: 600;
+}
+.ot-prompt .btn-primary,
+.ot-prompt .btn-secondary { width: 100%; margin-top: 8px; }
 .error-state { color: #c92a2a; margin: 0 0 12px; }
 @media (max-width: 700px) {
   .stage { flex-direction: column; }

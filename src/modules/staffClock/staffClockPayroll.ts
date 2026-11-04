@@ -22,10 +22,16 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100
 }
 
+// Only shifts that admin/auditor approved on both ends count as a paid day.
 export function isPayableShift(shift: StaffClockShift): boolean {
-  if (shift.clock_in_status === 'declined') return false
   if (!shift.clock_out_at) return false
-  return shift.clock_out_status !== 'declined'
+  return shift.clock_in_status === 'approved' && shift.clock_out_status === 'approved'
+}
+
+// Pending OT still shows on Attendance, but is not paid until approved.
+export function payableOvertimeHours(shift: StaffClockShift): number {
+  if (shift.ot_status !== 'approved') return 0
+  return recordedOvertimeHours(shift) ?? 0
 }
 
 export function validatePayrollInput(input: PayrollInput): ClockValidationResult {
@@ -54,7 +60,7 @@ export function calculatePayroll(shifts: StaffClockShift[], input: PayrollInput)
   )
   const days = payable.length
   const otHours = roundMoney(
-    payable.reduce((sum, row) => sum + (recordedOvertimeHours(row) ?? 0), 0)
+    payable.reduce((sum, row) => sum + payableOvertimeHours(row), 0)
   )
   const regularPay = roundMoney(days * input.ratePerDay)
   const otPay = roundMoney((otHours / MIN_OT_HOURS) * (input.ratePerDay / 2))

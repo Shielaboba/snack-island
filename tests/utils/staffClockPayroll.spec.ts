@@ -97,6 +97,25 @@ describe('payroll calculator', () => {
     expect(result.regularPay).toBe(500)
   })
 
+  it('does not pay pending OT or unapproved punches', () => {
+    const result = calculatePayroll(
+      [
+        shift({
+          id: 'pending-ot',
+          clock_out_at: '2026-11-04T16:00:00.000Z',
+          ot_requested: true,
+          ot_status: 'pending'
+        }),
+        shift({ id: 'pending-in', clock_in_status: 'pending' }),
+        shift({ id: 'pending-out', clock_out_status: 'pending' })
+      ],
+      range
+    )
+    expect(result.days).toBe(1)
+    expect(result.otHours).toBe(0)
+    expect(result.otPay).toBe(0)
+  })
+
   it('does not pay OT that was never recorded', () => {
     const row = shift({
       clock_out_at: '2026-11-04T16:00:00.000Z'

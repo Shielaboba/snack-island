@@ -261,4 +261,37 @@ describe('Clock.vue', () => {
     app.unmount()
     vi.useRealTimers()
   })
+  it('keeps the on-the-clock time ticking', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-04T07:00:00.000Z'))
+    list.mockResolvedValue([openShift({ clock_in_at: '2026-11-04T06:00:00.000Z' })])
+    const { el, app } = mountPage()
+    await vi.waitFor(() => expect(el.textContent).toMatch(/1h 0m on the clock/))
+    vi.advanceTimersByTime(5 * 60 * 1000)
+    await nextTick()
+    expect(el.textContent).toMatch(/1h 5m on the clock/)
+    app.unmount()
+  })
+
+  it('stops a camera that opens after staff switched names', async () => {
+    const stop = vi.fn()
+    let resolveCamera: (value: unknown) => void = () => {}
+    ;(navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveCamera = resolve
+      })
+    )
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="clock-in-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    const select = el.querySelector('[data-testid="clock-staff"]') as HTMLSelectElement
+    select.value = 'Den'
+    select.dispatchEvent(new Event('change'))
+    await nextTick()
+    resolveCamera({ getTracks: () => [{ stop }] })
+    await vi.waitFor(() => expect(stop).toHaveBeenCalled())
+    app.unmount()
+  })
 })

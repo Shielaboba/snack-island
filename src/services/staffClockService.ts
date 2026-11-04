@@ -10,6 +10,7 @@ import {
 } from '../models/StaffClock'
 import { compressSelfie } from '../modules/staffClock/compressSelfie'
 import {
+  findOverlappingShift,
   openShiftFor,
   validateClockIn,
   validateClockOut,
@@ -20,9 +21,6 @@ import {
 
 const SELECT_COLUMNS =
   'id, staff_name, clock_in_at, clock_out_at, clock_in_photo_path, clock_out_photo_path, clock_in_status, clock_out_status, clock_in_override, clock_out_override, created_by, updated_by, created_at, updated_at, ot_requested, ot_status, ot_requested_at'
-
-const SELECT_COLUMNS_BASE =
-  'id, staff_name, clock_in_at, clock_out_at, clock_in_photo_path, clock_out_photo_path, clock_in_status, clock_out_status, clock_in_override, clock_out_override, created_by, updated_by, created_at, updated_at'
 
 function throwIfError(error: { message: string } | null) {
   if (error) throw new Error(error.message)
@@ -37,10 +35,6 @@ function asShift(row: StaffClockShift): StaffClockShift {
   }
 }
 
-function missingOtColumn(error: { message?: string } | null) {
-  return Boolean(error?.message?.includes('ot_requested') || error?.message?.includes('ot_status'))
-}
-
 async function uploadPhoto(path: string, blob: Blob) {
   const jpeg = await compressSelfie(blob)
   const { error } = await supabase.storage.from(STAFF_CLOCK_BUCKET).upload(path, jpeg, {
@@ -48,6 +42,31 @@ async function uploadPhoto(path: string, blob: Blob) {
     upsert: true
   })
   throwIfError(error)
+}
+
+// Best effort: a leftover photo is not worth failing the punch over.
+async function removePhotos(paths: string[]) {
+  if (!paths.length) return
+  const { error } = await supabase.storage.from(STAFF_CLOCK_BUCKET).remove(paths)
+  if (error) console.warn('Could not remove staff clock photos:', error.message)
+}
+
+function firstRow(data: unknown[] | null, message: string): StaffClockShift {
+  const row = (data ?? [])[0] as StaffClockShift | undefined
+  if (!row) throw new Error(message)
+  return asShift(row)
+}
+
+function assertNoOverlap(
+  staffName: StaffName,
+  clockInAt: string,
+  clockOutAt: string | null,
+  existing: StaffClockShift[],
+  ignoreId?: string
+) {
+  if (findOverlappingShift(staffName, clockInAt, clockOutAt, existing, ignoreId)) {
+    throw new Error(`${staffName} already has a shift during that time.`)
+  }
 }
 
 function photoPaths(shift: StaffClockShift): string[] {
@@ -58,18 +77,11 @@ function photoPaths(shift: StaffClockShift): string[] {
 
 export const staffClockService = {
   async list(): Promise<StaffClockShift[]> {
-    const query = () =>
-      supabase.from(STAFF_CLOCK_TABLE).select(SELECT_COLUMNS).order('clock_in_at', { ascending: false })
-    let { data, error } = await query().order('created_at', { ascending: false })
-    if (missingOtColumn(error)) {
-      const fallback = await supabase
-        .from(STAFF_CLOCK_TABLE)
-        .select(SELECT_COLUMNS_BASE)
-        .order('clock_in_at', { ascending: false })
-        .order('created_at', { ascending: false })
-      data = fallback.data
-      error = fallback.error
-    }
+    const { data, error } = await supabase
+      .from(STAFF_CLOCK_TABLE)
+      .select(SELECT_COLUMNS)
+      .order('clock_in_at', { ascending: false })
+      .order('created_at', { ascending: false })
     throwIfError(error)
     return ((data ?? []) as StaffClockShift[]).map(asShift)
   },
@@ -108,11 +120,14 @@ export const staffClockService = {
         created_by: actor,
         updated_by: actor
       })
-      .select(SELECT_COLUMNS_BASE)
-    throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Clock-in did not save.')
-    return asShift(row)
+      .select(SELECT_COLUMNS)
+    try {
+      throwIfError(error)
+      return firstRow(data, 'Clock-in did not save.')
+    } catch (err) {
+      await removePhotos([path])
+      throw err
+    }
   },
 
   async clockOut(
@@ -140,10 +155,14 @@ export const staffClockService = {
       })
       .eq('id', open.id)
       .select(SELECT_COLUMNS)
-    throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Clock-out did not save.')
-    return row
+    try {
+      throwIfError(error)
+      return firstRow(data, 'Clock-out did not save.')
+    } catch (err) {
+      // A retry after a declined clock-out reuses the same path; keep that photo.
+      if (!open.clock_out_photo_path) await removePhotos([path])
+      throw err
+    }
   },
 
   async requestOt(
@@ -169,9 +188,7 @@ export const staffClockService = {
       .eq('id', open.id)
       .select(SELECT_COLUMNS)
     throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('OT request did not save.')
-    return row
+    return firstRow(data, 'OT request did not save.')
   },
 
   async recordOt(
@@ -194,9 +211,7 @@ export const staffClockService = {
       .eq('id', shift.id)
       .select(SELECT_COLUMNS)
     throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Could not record OT.')
-    return row
+    return firstRow(data, 'Could not record OT.')
   },
 
   async setOtStatus(id: string, status: PunchStatus, actor: string): Promise<StaffClockShift> {
@@ -210,9 +225,7 @@ export const staffClockService = {
       .eq('id', id)
       .select(SELECT_COLUMNS)
     throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Could not update OT status.')
-    return row
+    return firstRow(data, 'Could not update OT status.')
   },
 
   async setPunchStatus(
@@ -231,49 +244,61 @@ export const staffClockService = {
       .eq('id', id)
       .select(SELECT_COLUMNS)
     throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Could not update punch status.')
-    return row
+    return firstRow(data, 'Could not update punch status.')
   },
 
   async updateTimes(
-    id: string,
+    shift: StaffClockShift,
     patch: ShiftTimePatch,
+    existing: StaffClockShift[],
     actor: string
   ): Promise<StaffClockShift> {
     const check = validateShiftTimes(patch.clock_in_at, patch.clock_out_at)
     if (!check.ok) throw new Error(check.message)
+    // A declined clock-in stays declined; fixing its time must not reopen it.
+    const declined = shift.clock_in_status === 'declined'
+    if (!declined) {
+      assertNoOverlap(patch.staff_name, patch.clock_in_at, patch.clock_out_at, existing, shift.id)
+    }
     const now = new Date().toISOString()
     const payload: Record<string, unknown> = {
+      staff_name: patch.staff_name,
       clock_in_at: patch.clock_in_at,
       clock_in_override: true,
-      clock_in_status: 'approved',
+      clock_in_status: declined ? 'declined' : 'approved',
       updated_by: actor,
       updated_at: now
     }
+    const clearedOutPhoto = !patch.clock_out_at ? shift.clock_out_photo_path : null
     if (patch.clock_out_at) {
       payload.clock_out_at = patch.clock_out_at
       payload.clock_out_override = true
       payload.clock_out_status = 'approved'
+    } else if (shift.clock_out_at) {
+      payload.clock_out_at = null
+      payload.clock_out_photo_path = null
+      payload.clock_out_override = false
+      payload.clock_out_status = null
     }
     const { data, error } = await supabase
       .from(STAFF_CLOCK_TABLE)
       .update(payload)
-      .eq('id', id)
+      .eq('id', shift.id)
       .select(SELECT_COLUMNS)
     throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Could not update times.')
+    const row = firstRow(data, 'Could not update times.')
+    if (clearedOutPhoto) await removePhotos([clearedOutPhoto])
     return row
   },
 
   async createMissedPunch(
     input: MissedPunchInput,
-    _existing: StaffClockShift[],
+    existing: StaffClockShift[],
     actor: string
   ): Promise<StaffClockShift> {
     const check = validateShiftTimes(input.clock_in_at, input.clock_out_at)
     if (!check.ok) throw new Error(check.message)
+    assertNoOverlap(input.staff_name, input.clock_in_at, input.clock_out_at, existing)
     const now = new Date().toISOString()
     const { data, error } = await supabase
       .from(STAFF_CLOCK_TABLE)
@@ -294,18 +319,12 @@ export const staffClockService = {
       })
       .select(SELECT_COLUMNS)
     throwIfError(error)
-    const row = (data ?? [])[0] as StaffClockShift | undefined
-    if (!row) throw new Error('Missed punch did not save.')
-    return row
+    return firstRow(data, 'Missed punch did not save.')
   },
 
   async remove(shift: StaffClockShift): Promise<void> {
-    const paths = photoPaths(shift)
-    if (paths.length) {
-      const { error: storageError } = await supabase.storage.from(STAFF_CLOCK_BUCKET).remove(paths)
-      throwIfError(storageError)
-    }
     const { error } = await supabase.from(STAFF_CLOCK_TABLE).delete().eq('id', shift.id)
     throwIfError(error)
+    await removePhotos(photoPaths(shift))
   }
 }

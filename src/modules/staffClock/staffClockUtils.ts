@@ -262,6 +262,31 @@ export function validateShiftTimes(
   return { ok: true }
 }
 
+// A shift with no (or a declined) clock-out is still running, so it has no end.
+function shiftEndMs(shift: StaffClockShift): number {
+  if (!shift.clock_out_at || shift.clock_out_status === 'declined') return Infinity
+  return Date.parse(shift.clock_out_at)
+}
+
+export function findOverlappingShift(
+  name: StaffName,
+  clockInAt: string,
+  clockOutAt: string | null,
+  shifts: StaffClockShift[],
+  ignoreId?: string
+): StaffClockShift | undefined {
+  const start = Date.parse(clockInAt)
+  const end = clockOutAt ? Date.parse(clockOutAt) : Infinity
+  return shifts.find(
+    (row) =>
+      row.id !== ignoreId &&
+      row.staff_name === name &&
+      row.clock_in_status !== 'declined' &&
+      Date.parse(row.clock_in_at) < end &&
+      start < shiftEndMs(row)
+  )
+}
+
 function manilaPart(iso: string, type: Intl.DateTimeFormatPartTypes): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',

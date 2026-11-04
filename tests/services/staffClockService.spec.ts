@@ -110,6 +110,18 @@ describe('staffClockService.clockIn', () => {
     )
   })
 
+  it('removes the uploaded selfie when the insert fails', async () => {
+    const { remove } = mockStorage()
+    const mockSelect = vi.fn().mockResolvedValue({ data: null, error: { message: 'duplicate key' } })
+    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
+    vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
+
+    await expect(
+      staffClockService.clockIn('Shai', new Blob(['jpeg']), [], 'staff')
+    ).rejects.toThrow('duplicate key')
+    expect(remove).toHaveBeenCalledWith([expect.stringMatching(/^Shai\/.+-in\.jpg$/)])
+  })
+
   it('rejects a second open shift for the same person', async () => {
     await expect(
       staffClockService.clockIn('Shai', new Blob(['x']), [openShai], 'staff')
@@ -184,11 +196,13 @@ describe('staffClockService approvals and overrides', () => {
     vi.mocked(supabase.from).mockReturnValue({ update: mockUpdate } as any)
 
     await staffClockService.updateTimes(
-      openShai.id,
+      openShai,
       {
+        staff_name: 'Shai',
         clock_in_at: '2026-11-04T06:05:00.000Z',
         clock_out_at: '2026-11-04T14:10:00.000Z'
       },
+      [openShai],
       'ana'
     )
     expect(mockUpdate).toHaveBeenCalledWith(
@@ -201,6 +215,73 @@ describe('staffClockService approvals and overrides', () => {
         clock_out_status: 'approved'
       })
     )
+  })
+
+  it('clearing clock-out reopens the shift and drops its out photo', async () => {
+    const { remove } = mockStorage()
+    const closed: StaffClockShift = {
+      ...openShai,
+      clock_out_at: '2026-11-04T14:00:00.000Z',
+      clock_out_status: 'pending',
+      clock_out_photo_path: 'Shai/s1-out.jpg'
+    }
+    const mockSelect = vi.fn().mockResolvedValue({ data: [openShai], error: null })
+    const mockEq = vi.fn().mockReturnValue({ select: mockSelect })
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq })
+    vi.mocked(supabase.from).mockReturnValue({ update: mockUpdate } as any)
+
+    await staffClockService.updateTimes(
+      closed,
+      { staff_name: 'Shai', clock_in_at: closed.clock_in_at, clock_out_at: null },
+      [closed],
+      'ana'
+    )
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clock_out_at: null,
+        clock_out_status: null,
+        clock_out_photo_path: null
+      })
+    )
+    expect(remove).toHaveBeenCalledWith(['Shai/s1-out.jpg'])
+  })
+
+  it('saves a changed staff name and keeps a declined clock-in declined', async () => {
+    const declined: StaffClockShift = { ...openShai, clock_in_status: 'declined' }
+    const mockSelect = vi.fn().mockResolvedValue({ data: [declined], error: null })
+    const mockEq = vi.fn().mockReturnValue({ select: mockSelect })
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq })
+    vi.mocked(supabase.from).mockReturnValue({ update: mockUpdate } as any)
+
+    await staffClockService.updateTimes(
+      declined,
+      { staff_name: 'Den', clock_in_at: declined.clock_in_at, clock_out_at: null },
+      [declined],
+      'ana'
+    )
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ staff_name: 'Den', clock_in_status: 'declined' })
+    )
+  })
+
+  it('rejects a missed punch that overlaps an existing shift', async () => {
+    const closed: StaffClockShift = {
+      ...openShai,
+      clock_out_at: '2026-11-04T14:00:00.000Z',
+      clock_out_status: 'approved'
+    }
+    await expect(
+      staffClockService.createMissedPunch(
+        {
+          staff_name: 'Shai',
+          clock_in_at: '2026-11-04T10:00:00.000Z',
+          clock_out_at: '2026-11-04T18:00:00.000Z'
+        },
+        [closed],
+        'ana'
+      )
+    ).rejects.toThrow(/already has a shift/i)
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('missed punch inserts an approved override with no photos', async () => {
@@ -319,5 +400,15 @@ describe('staffClockService.remove', () => {
     await staffClockService.remove(openShai)
     expect(remove).toHaveBeenCalledWith(['Shai/s1-in.jpg'])
     expect(mockEq).toHaveBeenCalledWith('id', 's1')
+  })
+
+  it('keeps the photos when the row delete fails', async () => {
+    const { remove } = mockStorage()
+    const mockEq = vi.fn().mockResolvedValue({ error: { message: 'denied' } })
+    const mockDelete = vi.fn().mockReturnValue({ eq: mockEq })
+    vi.mocked(supabase.from).mockReturnValue({ delete: mockDelete } as any)
+
+    await expect(staffClockService.remove(openShai)).rejects.toThrow('denied')
+    expect(remove).not.toHaveBeenCalled()
   })
 })

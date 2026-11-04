@@ -5,7 +5,7 @@ Snack Island has two staff, **Shai** and **Den**, who share one staff login. Clo
 ## Screens
 
 - **Clock** (`/clock`) — staff (role 1). Pick Shai or Den. Large current time (Asia/Manila). Only the next action: Clock in *or* Clock out. After tap: time stays left; camera + **Capture clock in/out** on the right. Selfie required. Time starts at capture. Status note: waiting / approved / declined. They can **Request OT** if they clocked in before **2:00 PM**, or after **10:00 PM** (Asia/Manila). Clock-out asks if they have ≥ 2 extra hours and never requested. Time keeps running while OT waits for approval.
-- **Attendance** (`/attendance`) — admin and auditor. Same table: in, out, OT, photo links (centered modal), pencil (edit times), trash (delete), Add missed punch, **Payroll Calculator**, Approve/Decline in and out, **Record OT** when staff did not request it. Both roles see photos. Payroll Calculator: staff, start/end date, rate per day, deduction. Each closed session is 1 day. 2 hours recorded OT = half of the daily rate.
+- **Attendance** (`/attendance`) — admin and auditor. Same table: in, out, OT, photo links (centered modal), pencil (edit times), trash (delete), Add missed punch, **Payroll Calculator**, Approve/Decline in and out, **Record OT** when staff did not request it. Both roles see photos. Payroll Calculator: staff, start/end date, rate per day, deduction. Each closed session with approved clock-in and clock-out is 1 day. 2 hours of approved OT = half of the daily rate. Pending punches and pending OT are not paid.
 
 ## Rules
 

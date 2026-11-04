@@ -324,8 +324,13 @@ async function saveTimes(payload: {
       )
     } else if (editing.value) {
       await staffClockService.updateTimes(
-        editing.value.id,
-        { clock_in_at: payload.clock_in_at, clock_out_at: payload.clock_out_at },
+        editing.value,
+        {
+          staff_name: payload.staff_name,
+          clock_in_at: payload.clock_in_at,
+          clock_out_at: payload.clock_out_at
+        },
+        shifts.value,
         actor()
       )
     }

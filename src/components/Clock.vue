@@ -143,6 +143,8 @@ const nowMs = ref(Date.now())
 const otPromptOpen = ref(false)
 const videoEl = ref<HTMLVideoElement | null>(null)
 let stream: MediaStream | null = null
+// Bumped on every start/cancel so a camera that opens late can tell it is stale.
+let captureToken = 0
 let tick: ReturnType<typeof setInterval> | null = null
 
 const actor = () => authService.getCurrentUser()?.username ?? 'staff'
@@ -159,7 +161,7 @@ const showRequestOt = computed(
 const elapsedCopy = computed(() => {
   const shift = relevantShift.value
   if (!shift || !isOpenShift(shift)) return 'Not on the clock'
-  const ms = Date.now() - Date.parse(shift.clock_in_at)
+  const ms = nowMs.value - Date.parse(shift.clock_in_at)
   const hours = Math.floor(ms / 3600000)
   const minutes = Math.floor((ms % 3600000) / 60000)
   return `${hours}h ${minutes}m on the clock`
@@ -186,6 +188,7 @@ async function load() {
 }
 
 function stopCamera() {
+  captureToken += 1
   stream?.getTracks().forEach((track) => track.stop())
   stream = null
   if (videoEl.value) videoEl.value.srcObject = null
@@ -214,19 +217,29 @@ function skipOtThenClockOut() {
 
 async function startCapture(mode: 'in' | 'out') {
   error.value = ''
+  stopCamera()
+  const token = captureToken
   captureMode.value = mode
   capturing.value = true
   await nextTick()
+  let opened: MediaStream
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    opened = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user' },
       audio: false
     })
   } catch (err) {
+    if (token !== captureToken) return
     capturing.value = false
     error.value = errorMessage(err, 'Camera is not available.')
     return
   }
+  if (token !== captureToken) {
+    // Cancelled, switched staff, or left the page while the camera was starting.
+    opened.getTracks().forEach((track) => track.stop())
+    return
+  }
+  stream = opened
   try {
     if (videoEl.value) videoEl.value.srcObject = stream
   } catch {

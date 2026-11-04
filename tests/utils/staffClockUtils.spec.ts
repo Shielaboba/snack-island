@@ -28,7 +28,8 @@ import {
   toManilaDateTimeLocal,
   validateClockIn,
   validateClockOut,
-  validateShiftTimes
+  validateShiftTimes,
+  findOverlappingShift
 } from '../../src/modules/staffClock/staffClockUtils'
 
 function shift(partial: Partial<StaffClockShift>): StaffClockShift {
@@ -377,5 +378,33 @@ describe('selfie size', () => {
     expect(selfieTargetSize(1920, 1080)).toEqual({ width: 720, height: 405 })
     expect(selfieTargetSize(400, 400)).toEqual({ width: 400, height: 400 })
     expect(selfieTargetSize(720, 2000)).toEqual({ width: 259, height: 720 })
+  })
+})
+
+describe('findOverlappingShift', () => {
+  const closed = shift({ clock_out_at: '2026-11-04T14:00:00.000Z', clock_out_status: 'approved' })
+
+  it('finds a shift that overlaps the typed range', () => {
+    expect(
+      findOverlappingShift('Shai', '2026-11-04T10:00:00.000Z', '2026-11-04T18:00:00.000Z', [closed])
+    ).toBe(closed)
+  })
+
+  it('ignores back-to-back shifts, other staff, declined rows, and the row being edited', () => {
+    const range = ['2026-11-04T14:00:00.000Z', '2026-11-04T20:00:00.000Z'] as const
+    expect(findOverlappingShift('Shai', ...range, [closed])).toBeUndefined()
+    expect(findOverlappingShift('Den', '2026-11-04T10:00:00.000Z', null, [closed])).toBeUndefined()
+    const declined = shift({ id: 'd', clock_in_status: 'declined' })
+    expect(findOverlappingShift('Shai', '2026-11-04T10:00:00.000Z', null, [declined])).toBeUndefined()
+    expect(
+      findOverlappingShift('Shai', '2026-11-04T07:00:00.000Z', null, [closed], closed.id)
+    ).toBeUndefined()
+  })
+
+  it('treats an open shift as still running', () => {
+    const open = shift({})
+    expect(
+      findOverlappingShift('Shai', '2026-11-05T06:00:00.000Z', '2026-11-05T14:00:00.000Z', [open])
+    ).toBe(open)
   })
 })

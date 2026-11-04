@@ -52,6 +52,128 @@
         </div>
       </div>
 
+      <!-- Ledger check -->
+      <div class="section">
+        <div class="section-head">
+          <h2 class="section-title">Ledger check</h2>
+          <span v-if="check" class="badge" :class="check.mismatchCount === 0 ? 'badge-ok' : 'badge-bad'">
+            {{ check.mismatchCount === 0 ? 'Everything matches' : `${check.mismatchCount} mismatch${check.mismatchCount === 1 ? '' : 'es'}` }}
+          </span>
+        </div>
+        <div v-if="ledgerError" class="salary-alert">{{ ledgerError }}</div>
+        <template v-else-if="check">
+          <p class="hint top">Ledger amounts are what the auditor entered. Difference = ledger − POS.</p>
+
+          <div class="owner-row">
+            <div>
+              <div class="stat-label">Expected owner remit</div>
+              <div class="owner-value">{{ peso(check.owner.expected) }}</div>
+              <div class="sub">Cash sales − ledger expenses</div>
+            </div>
+            <div>
+              <div class="stat-label">Remitted to owner</div>
+              <div class="owner-value">{{ peso(check.owner.remitted) }}</div>
+            </div>
+            <div>
+              <div class="stat-label">Kept for next week</div>
+              <div class="owner-value">{{ peso(check.owner.kept) }}</div>
+              <div class="sub">Info only, not a mismatch</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th class="num">Expected remit</th>
+                  <th class="num">Ledger remit</th>
+                  <th class="num">Diff</th>
+                  <th class="num">Expenses page</th>
+                  <th class="num">Ledger expenses</th>
+                  <th class="num">Diff</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in check.days" :key="d.date" :class="{ 'row-bad': !d.ok }">
+                  <td>{{ formatDay(d.date) }}</td>
+                  <td class="num">{{ peso(d.expectedRemit) }}</td>
+                  <td class="num">{{ peso(d.ledgerRemit) }}</td>
+                  <td class="num" :class="diffClass(d.remitDiff)">{{ signedPeso(d.remitDiff) }}</td>
+                  <td class="num">{{ peso(d.posExpenses) }}</td>
+                  <td class="num">{{ peso(d.ledgerExpenses) }}</td>
+                  <td class="num" :class="diffClass(d.expenseDiff)">{{ signedPeso(d.expenseDiff) }}</td>
+                  <td><span class="pill" :class="d.ok ? 'pill-ok' : 'pill-missing'">{{ d.ok ? '✓' : 'Check' }}</span></td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td class="num">{{ peso(check.totals.expectedRemit) }}</td>
+                  <td class="num">{{ peso(check.totals.ledgerRemit) }}</td>
+                  <td class="num" :class="diffClass(check.totals.remitDiff)">{{ signedPeso(check.totals.remitDiff) }}</td>
+                  <td class="num">{{ peso(check.totals.posExpenses) }}</td>
+                  <td class="num">{{ peso(check.totals.ledgerExpenses) }}</td>
+                  <td class="num" :class="diffClass(check.totals.expenseDiff)">{{ signedPeso(check.totals.expenseDiff) }}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p class="hint">Expected remit = that day's cash sales − that day's expenses on the Expenses page.</p>
+
+          <div class="two-col check-cols">
+            <div>
+              <h3 class="sub-title">Expenses by category</h3>
+              <div v-if="check.categories.length === 0" class="empty">No expenses on either side.</div>
+              <div v-else class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr><th>Category</th><th class="num">Expenses page</th><th class="num">Ledger</th><th class="num">Diff</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="c in check.categories" :key="c.category" :class="{ 'row-bad': !c.ok }">
+                      <td>{{ c.category }}</td>
+                      <td class="num">{{ peso(c.pos) }}</td>
+                      <td class="num">{{ peso(c.ledger) }}</td>
+                      <td class="num" :class="diffClass(c.diff)">{{ signedPeso(c.diff) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h3 class="sub-title">Salaries vs ledger Labor</h3>
+              <div v-if="check.salaries.length === 0" class="empty">No salaries or Labor entries this week.</div>
+              <div v-else class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr><th>Date</th><th class="num">Salaries</th><th class="num">Ledger Labor</th><th class="num">Diff</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in check.salaries" :key="r.date" :class="{ 'row-bad': !r.ok }">
+                      <td>{{ formatDay(r.date) }}</td>
+                      <td class="num">{{ peso(r.salaries) }}</td>
+                      <td class="num">{{ peso(r.ledgerLabor) }}</td>
+                      <td class="num" :class="diffClass(r.diff)">{{ signedPeso(r.diff) }}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Total</td>
+                      <td class="num">{{ peso(check.salaryTotals.salaries) }}</td>
+                      <td class="num">{{ peso(check.salaryTotals.ledgerLabor) }}</td>
+                      <td class="num" :class="diffClass(check.salaryTotals.diff)">{{ signedPeso(check.salaryTotals.diff) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
       <!-- Salaries -->
       <div class="section">
         <h2 class="section-title">Salaries</h2>
@@ -239,12 +361,27 @@ import { discountService } from '../services/discountService'
 import { buildWeeklySummary, getCompletedWeek, sessionsInWeek, type WeeklySummary } from '../modules/weekly/weeklySummary'
 import type { PaymentMethod } from '../models'
 import { SALARY_SCHEDULE_TEXT } from '../modules/salary/salarySchedule'
+import { ledgerService } from '../services/ledgerService'
+import { buildLedgerCheck } from '../modules/weekly/ledgerCheck'
+import type { LedgerEntry } from '../models/Ledger'
 
 const weeksBack = ref(0)
 const week = computed(() => getCompletedWeek(new Date(), weeksBack.value))
 const loading = ref(false)
 const error = ref('')
 const summary = ref<WeeklySummary | null>(null)
+const ledger = ref<LedgerEntry[] | null>(null)
+const ledgerError = ref('')
+const check = computed(() => (summary.value && ledger.value ? buildLedgerCheck(summary.value, ledger.value) : null))
+
+function signedPeso(n: number): string {
+  if (n === 0) return '—'
+  return (n > 0 ? '+' : '−') + pesoFormat.format(Math.abs(n))
+}
+
+function diffClass(n: number): string {
+  return n === 0 ? 'muted' : 'negative strong'
+}
 
 const allExpenses = computed(() => summary.value?.days.flatMap(d => d.expenseList) ?? [])
 const missingSalaryCount = computed(() => summary.value?.salaries.reduce((n, s) => n + s.missingDates.length, 0) ?? 0)
@@ -275,6 +412,14 @@ async function load() {
   try {
     const now = new Date()
     const range = week.value
+    // A ledger failure should not hide the rest of the summary
+    const ledgerLoad = ledgerService.list().then(
+      rows => ({ rows, failed: false }),
+      e => {
+        console.error('Error loading ledger:', e)
+        return { rows: null, failed: true }
+      },
+    )
     const [sessions, expenses, menuItems, discounts] = await Promise.all([
       StoreSessionService.getAllSessions(),
       expenseService.getAll(),
@@ -293,8 +438,11 @@ async function load() {
       items = await OrderService.getOrderItemsBulk(orders.map(o => o.id))
     }
 
+    const ledgerResult = await ledgerLoad
     if (id !== loadId) return
-    summary.value = buildWeeklySummary({ week: range, sessions: weekSessions, orders, items, expenses, menuItems, discounts, now })
+    ledger.value = ledgerResult.rows
+    ledgerError.value = ledgerResult.failed ? 'Could not load the ledger, so the ledger check is not shown.' : ''
+    summary.value =buildWeeklySummary({ week: range, sessions: weekSessions, orders, items, expenses, menuItems, discounts, now })
   } catch (e) {
     console.error('Error loading weekly summary:', e)
     if (id === loadId) error.value = 'Could not load this week. Please try again.'
@@ -564,6 +712,70 @@ tr.closed td {
   border-radius: 999px;
   background: #f3f4f6;
   color: #374151;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.section-head .section-title {
+  margin: 0;
+}
+
+.badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.badge-ok {
+  background: #d1e7dd;
+  color: #0e3b2e;
+}
+
+.badge-bad {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.hint.top {
+  margin: 0 0 12px;
+}
+
+.owner-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.owner-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+tr.row-bad td {
+  background: #fef2f2;
+}
+
+.check-cols {
+  margin-top: 18px;
+}
+
+.sub-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px;
 }
 
 .salary-alert {

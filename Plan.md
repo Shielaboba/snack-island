@@ -146,6 +146,13 @@ Typical flow:
 
 Remaining balances are calculated from the lines entered. See `docs/superpowers/specs/2026-09-25-ledger-design.md`.
 
+**Weekly Summary ledger check.** The Weekly Summary (Fri–Thu) reads the ledger to check it. The ledger itself still reads nothing else. Any difference, even ₱1, is flagged:
+
+- Per day: POS remittance vs expected (cash sales − that day's Expenses-page expenses), and ledger expenses (both wallets) vs Expenses-page expenses.
+- Per category for the week: Expenses page vs ledger.
+- Per pay date: salaries recorded vs ledger `Labor` expenses.
+- Owner remit is info only: expected (week cash sales − ledger expenses), remitted, and what was kept for next week.
+
 ---
 
 ## 💾 5. Database Design (Supabase)

@@ -218,12 +218,12 @@ Follow the Expenses page patterns (header, filters, table, primary button, modal
 Human labels:
 
 - `opening_cash` → “Starting cash”
-- `pos_float` → “Cash to POS”
+- `pos_float` → “Initial Petty Cash”
 - `pos_remittance` → “Cart Cash Remittance” (fields: Total Sales, Petty Cash Returned; amount is the sum)
 - `gcash_remittance` → “GCash remittance”
 - `owner_remittance` → “Remit to owner”
 - `fund_expense` → “Fund expense wallet”
-- `expense` → “Expense”
+- `expense` → “Total Expense”
 
 ## 9. Error handling
 

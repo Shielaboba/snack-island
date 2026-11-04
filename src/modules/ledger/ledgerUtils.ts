@@ -243,12 +243,12 @@ export function validateEntry(
 export function ledgerTypeLabel(type: LedgerEntryType): string {
   const labels: Record<LedgerEntryType, string> = {
     opening_cash: 'Starting cash',
-    pos_float: 'Cash to POS',
+    pos_float: 'Initial Petty Cash',
     pos_remittance: 'Cart Cash Remittance',
     gcash_remittance: 'GCash remittance',
     owner_remittance: 'Remit to owner',
     fund_expense: 'Fund expense wallet',
-    expense: 'Expense'
+    expense: 'Total Expense'
   }
   return labels[type]
 }

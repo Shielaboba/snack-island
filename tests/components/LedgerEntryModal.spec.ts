@@ -94,6 +94,24 @@ describe('LedgerEntryModal', () => {
     app.unmount()
   })
 
+  it('labels expense as Total Expense in the type dropdown', async () => {
+    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    const option = [...type.querySelectorAll('option')].find((o) => o.value === 'expense')
+    expect(option?.textContent).toBe('Total Expense')
+    app.unmount()
+  })
+
+  it('labels pos_float as Initial Petty Cash in the type dropdown', async () => {
+    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    const option = [...type.querySelectorAll('option')].find((o) => o.value === 'pos_float')
+    expect(option?.textContent).toBe('Initial Petty Cash')
+    app.unmount()
+  })
+
   it('labels pos_remittance as Cart Cash Remittance and shows the two cash-in fields', async () => {
     const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
     await nextTick()

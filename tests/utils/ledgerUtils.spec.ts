@@ -255,12 +255,12 @@ describe('weekSummary and filters', () => {
 describe('ledgerTypeLabel and ledgerWalletLabel', () => {
   it('returns the human labels', () => {
     expect(ledgerTypeLabel('opening_cash')).toBe('Starting cash')
-    expect(ledgerTypeLabel('pos_float')).toBe('Cash to POS')
+    expect(ledgerTypeLabel('pos_float')).toBe('Initial Petty Cash')
     expect(ledgerTypeLabel('pos_remittance')).toBe('Cart Cash Remittance')
     expect(ledgerTypeLabel('gcash_remittance')).toBe('GCash remittance')
     expect(ledgerTypeLabel('owner_remittance')).toBe('Remit to owner')
     expect(ledgerTypeLabel('fund_expense')).toBe('Fund expense wallet')
-    expect(ledgerTypeLabel('expense')).toBe('Expense')
+    expect(ledgerTypeLabel('expense')).toBe('Total Expense')
     expect(ledgerWalletLabel('auditor_cash')).toBe('Auditor cash')
     expect(ledgerWalletLabel('expense')).toBe('Expense wallet')
     expect(ledgerWalletLabel('gcash')).toBe('GCash')

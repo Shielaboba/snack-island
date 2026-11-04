@@ -54,7 +54,7 @@ export function toPHDate(value: string | Date): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
-function addDays(date: string, days: number): string {
+export function addDays(date: string, days: number): string {
   const ms = new Date(`${date}T00:00:00Z`).getTime() + days * DAY_MS
   return new Date(ms).toISOString().slice(0, 10)
 }

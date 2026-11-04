@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildLedgerCheck } from '../../../src/modules/weekly/ledgerCheck'
+import { auditCountsByDay, buildLedgerCheck } from '../../../src/modules/weekly/ledgerCheck'
 import type { DaySummary, WeeklySummary } from '../../../src/modules/weekly/weeklySummary'
 import type { Expense, ExpenseCategory } from '../../../src/models'
 import type { LedgerEntry, LedgerEntryType, LedgerExpenseCategory, LedgerWallet } from '../../../src/models/Ledger'
-import { getWeekSalaryStatus } from '../../../src/modules/salary/salarySchedule'
 
 const WEEK = { start: '2026-10-23', end: '2026-10-29' } // Fri–Thu
 const DATES = ['2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29']
@@ -34,6 +33,11 @@ function entry(
   }
 }
 
+/** Audit counts with only the Cash row filled in. */
+function cashCounts(map: Record<string, number>) {
+  return Object.fromEntries(Object.entries(map).map(([d, cash]) => [d, { cash, expenses: 0 }]))
+}
+
 /** A minimal summary: only the fields the ledger check reads. */
 function summary(cashByDate: Record<string, number>, expenses: Expense[]): WeeklySummary {
   const days: DaySummary[] = DATES.map(date => {
@@ -60,23 +64,40 @@ function summary(cashByDate: Record<string, number>, expenses: Expense[]): Weekl
     discounts: [],
     vouchers: { orders: 0, burgers: 0 },
     expenseCategories: [],
-    salaries: getWeekSalaryStatus(DATES, expenses),
+    salaries: [],
   }
 }
 
 describe('buildLedgerCheck — POS remittance', () => {
-  it('expects cash sales minus that day’s expenses, and matches when the ledger agrees', () => {
+  it('expects cash sales plus the start-of-day count, and matches when the ledger agrees', () => {
     const s = summary({ '2026-10-23': 5000 }, [expense('2026-10-23', 800)])
-    const check = buildLedgerCheck(s, [
-      entry('2026-10-23', 'pos_remittance', 4200),
-      entry('2026-10-23', 'expense', 800),
-    ])
+    const check = buildLedgerCheck(
+      s,
+      [entry('2026-10-23', 'pos_remittance', 5500), entry('2026-10-23', 'expense', 800)],
+      cashCounts({ '2026-10-23': 500 }),
+    )
     const day = check.days[0]
-    expect(day.expectedRemit).toBe(4200)
-    expect(day.ledgerRemit).toBe(4200)
+    expect(day.cashSales).toBe(5000)
+    expect(day.startCount).toBe(500)
+    expect(day.expectedRemit).toBe(5500)
+    expect(day.ledgerRemit).toBe(5500)
     expect(day.remitDiff).toBe(0)
     expect(day.ok).toBe(true)
     expect(check.mismatchCount).toBe(0)
+  })
+
+  it('does not subtract expenses from the expected remit', () => {
+    const s = summary({ '2026-10-23': 1000 }, [expense('2026-10-23', 300)])
+    const check = buildLedgerCheck(s, [], cashCounts({ '2026-10-23': 200 }))
+    expect(check.days[0].expectedRemit).toBe(1200)
+  })
+
+  it('treats a missing start-of-day count as zero', () => {
+    const s = summary({ '2026-10-24': 1000 }, [])
+    const check = buildLedgerCheck(s, [entry('2026-10-24', 'pos_remittance', 1000)])
+    const day = check.days.find(d => d.date === '2026-10-24')!
+    expect(day.startCount).toBe(0)
+    expect(day.ok).toBe(true)
   })
 
   it('flags any difference, even under a peso', () => {
@@ -88,9 +109,9 @@ describe('buildLedgerCheck — POS remittance', () => {
     expect(check.mismatchCount).toBe(1)
   })
 
-  it('flags a day with sales but no remittance recorded', () => {
-    const s = summary({ '2026-10-25': 300 }, [])
-    const check = buildLedgerCheck(s, [])
+  it('flags a day with a start count but no remittance recorded', () => {
+    const s = summary({}, [])
+    const check = buildLedgerCheck(s, [], cashCounts({ '2026-10-25': 300 }))
     const day = check.days.find(d => d.date === '2026-10-25')!
     expect(day.ledgerRemit).toBe(0)
     expect(day.remitDiff).toBe(-300)
@@ -109,15 +130,45 @@ describe('buildLedgerCheck — POS remittance', () => {
   })
 
   it('totals the week', () => {
-    const s = summary({ '2026-10-23': 1000, '2026-10-24': 2000 }, [expense('2026-10-24', 500)])
-    const check = buildLedgerCheck(s, [
-      entry('2026-10-23', 'pos_remittance', 1000),
-      entry('2026-10-24', 'pos_remittance', 1400),
-      entry('2026-10-24', 'expense', 500),
-    ])
-    expect(check.totals.expectedRemit).toBe(2500)
-    expect(check.totals.ledgerRemit).toBe(2400)
+    const s = summary({ '2026-10-23': 1000, '2026-10-24': 2000 }, [])
+    const check = buildLedgerCheck(
+      s,
+      [entry('2026-10-23', 'pos_remittance', 1500), entry('2026-10-24', 'pos_remittance', 2400)],
+      cashCounts({ '2026-10-23': 500, '2026-10-24': 500 }),
+    )
+    expect(check.totals.cashSales).toBe(3000)
+    expect(check.totals.startCount).toBe(1000)
+    expect(check.totals.expectedRemit).toBe(4000)
+    expect(check.totals.ledgerRemit).toBe(3900)
     expect(check.totals.remitDiff).toBe(-100)
+  })
+})
+
+describe('auditCountsByDay', () => {
+  const sessions = [
+    { id: 's1', opened_at: '2026-10-23T01:00:00Z' }, // Fri Oct 23 Manila
+    { id: 's2', opened_at: '2026-10-23T08:00:00Z' }, // same day, second session
+    { id: 's3', opened_at: '2026-10-24T17:00:00Z' }, // Sun Oct 25 01:00 Manila
+    { id: 's4', opened_at: '2026-10-26T01:00:00Z' }, // Mon Oct 26, audit not saved
+  ]
+
+  it('sums Cash and Expenses start counts per Manila day the session opened', () => {
+    const counts = auditCountsByDay(sessions, [
+      { session_id: 's1', name: 'Cash', start_of_day: 500 },
+      { session_id: 's1', name: 'Expenses', start_of_day: 1000 },
+      { session_id: 's1', name: 'GCash', start_of_day: 900 },
+      { session_id: 's2', name: 'Cash', start_of_day: 200 },
+      { session_id: 's3', name: 'Cash', start_of_day: 300 },
+    ])
+    expect(counts).toEqual({
+      '2026-10-23': { cash: 700, expenses: 1000 },
+      '2026-10-25': { cash: 300, expenses: 0 },
+      '2026-10-26': { cash: 0, expenses: 0 },
+    })
+  })
+
+  it('ignores snapshots for sessions it was not given', () => {
+    expect(auditCountsByDay([], [{ session_id: 'other', name: 'Cash', start_of_day: 100 }])).toEqual({})
   })
 })
 
@@ -125,8 +176,8 @@ describe('buildLedgerCheck — expenses', () => {
   it('counts ledger expenses from both wallets', () => {
     const s = summary({ '2026-10-26': 1000 }, [expense('2026-10-26', 300)])
     const check = buildLedgerCheck(s, [
-      entry('2026-10-26', 'pos_remittance', 700),
-      entry('2026-10-26', 'expense', 100, { wallet: 'petty_cash' }),
+      entry('2026-10-26', 'pos_remittance', 1000),
+      entry('2026-10-26', 'expense', 100, { wallet: 'expense' }),
       entry('2026-10-26', 'expense', 200, { wallet: 'auditor_cash' }),
     ])
     const day = check.days.find(d => d.date === '2026-10-26')!
@@ -135,30 +186,14 @@ describe('buildLedgerCheck — expenses', () => {
     expect(day.ok).toBe(true)
   })
 
-  it('does not count petty cash issues or owner remits as expenses', () => {
+  it('does not count wallet funding, float or owner remits as expenses', () => {
     const s = summary({}, [])
     const check = buildLedgerCheck(s, [
-      entry('2026-10-26', 'petty_issue', 500),
+      entry('2026-10-26', 'fund_expense', 500),
       entry('2026-10-26', 'owner_remittance', 2000),
       entry('2026-10-26', 'pos_float', 1000),
     ])
     expect(check.totals.ledgerExpenses).toBe(0)
-  })
-
-  it('compares by category for the week', () => {
-    const s = summary({}, [
-      expense('2026-10-23', 100, 'Gas'),
-      expense('2026-10-24', 50, 'Gas'),
-      expense('2026-10-24', 300, 'Government Fees'),
-    ])
-    const check = buildLedgerCheck(s, [
-      entry('2026-10-23', 'expense', 150, { category: 'Gas' }),
-      entry('2026-10-25', 'expense', 40, { category: 'Misc' }),
-    ])
-    const byCat = Object.fromEntries(check.categories.map(c => [c.category, c]))
-    expect(byCat.Gas).toMatchObject({ pos: 150, ledger: 150, diff: 0, ok: true })
-    expect(byCat['Government Fees']).toMatchObject({ pos: 300, ledger: 0, diff: -300, ok: false })
-    expect(byCat.Misc).toMatchObject({ pos: 0, ledger: 40, diff: 40, ok: false })
   })
 
   it('flags a day whose expense totals differ', () => {
@@ -170,50 +205,78 @@ describe('buildLedgerCheck — expenses', () => {
   })
 })
 
-describe('buildLedgerCheck — owner remit (info only)', () => {
-  it('expected is week cash sales minus ledger expenses; the rest is kept as float', () => {
-    const s = summary({ '2026-10-23': 10000 }, [expense('2026-10-23', 1000)])
-    const check = buildLedgerCheck(s, [
-      entry('2026-10-23', 'pos_remittance', 9000),
-      entry('2026-10-23', 'expense', 1000),
-      entry('2026-10-29', 'owner_remittance', 6000),
-    ])
-    expect(check.owner.expected).toBe(9000)
-    expect(check.owner.remitted).toBe(6000)
-    expect(check.owner.kept).toBe(3000)
+describe('buildLedgerCheck — owner remit (rolling, info only)', () => {
+  it('rolls cash on hand through the week and sets aside next Friday at the end', () => {
+    const s = summary({}, [expense('2026-10-23', 300), expense('2026-10-24', 100)])
+    const check = buildLedgerCheck(
+      s,
+      [
+        entry('2026-10-23', 'pos_remittance', 2000),
+        entry('2026-10-24', 'pos_remittance', 1500),
+      ],
+      {
+        '2026-10-23': { cash: 500, expenses: 1000 }, // carried in from last week
+        '2026-10-24': { cash: 400, expenses: 800 },
+        '2026-10-30': { cash: 600, expenses: 900 }, // next Friday
+      },
+      '2026-11-04',
+    )
+    const o = check.owner
+    expect(o.carriedIn).toBe(1500)
+    // Fri: 1500 + 2000 − 500 − 300 = 2700
+    expect(o.days[0]).toMatchObject({ date: '2026-10-23', remittance: 2000, pettyCashOut: 500, expenses: 300, cashOnHand: 2700 })
+    // Sat: 2700 + 1500 − 400 − 100 = 3700, then flat to Thursday
+    expect(o.days[1].cashOnHand).toBe(3700)
+    expect(o.days[6].cashOnHand).toBe(3700)
+    expect(o.setAside).toEqual({ pettyCash: 600, expenseWallet: 900 })
+    expect(o.ownerRemit).toBe(2200)
+    expect(o.pending).toBe(false)
+  })
+
+  it('does not subtract the expense wallet day by day', () => {
+    const s = summary({}, [])
+    const check = buildLedgerCheck(
+      s,
+      [entry('2026-10-24', 'pos_remittance', 1000)],
+      { '2026-10-24': { cash: 0, expenses: 5000 } },
+      '2026-11-04',
+    )
+    expect(check.owner.days[6].cashOnHand).toBe(1000)
+  })
+
+  it('carries in 0 when the store was closed on Friday', () => {
+    const s = summary({}, [])
+    const check = buildLedgerCheck(s, [entry('2026-10-24', 'pos_remittance', 1000)], {}, '2026-11-04')
+    expect(check.owner.carriedIn).toBe(0)
+    expect(check.owner.setAside).toEqual({ pettyCash: 0, expenseWallet: 0 })
+    expect(check.owner.ownerRemit).toBe(1000)
+  })
+
+  it('is pending while next Friday has not opened yet', () => {
+    const s = summary({}, [])
+    const check = buildLedgerCheck(s, [entry('2026-10-24', 'pos_remittance', 1000)], {}, '2026-10-30')
+    expect(check.owner.pending).toBe(true)
+    expect(check.owner.ownerRemit).toBeNull()
+    expect(check.owner.setAside).toBeNull()
+  })
+
+  it('shows the ledger remit to owner and never counts as a mismatch', () => {
+    const s = summary({}, [])
+    const check = buildLedgerCheck(
+      s,
+      [entry('2026-10-29', 'owner_remittance', 1200)],
+      {},
+      '2026-11-04',
+    )
+    expect(check.owner.remitted).toBe(1200)
     expect(check.mismatchCount).toBe(0)
   })
 })
 
-describe('buildLedgerCheck — salaries vs Labor', () => {
-  it('compares salaries paid on each date with ledger Labor on that date', () => {
-    // Thu 2026-10-29 is Den's pay day; Mon 2026-10-26 is Shai's
-    const s = summary({}, [
-      expense('2026-10-29', 700, 'Labor', 'Den Salary'),
-      expense('2026-10-26', 600, 'Labor', 'Shai Salary'),
-    ])
-    const check = buildLedgerCheck(s, [
-      entry('2026-10-29', 'expense', 700, { category: 'Labor' }),
-      entry('2026-10-26', 'expense', 500, { category: 'Labor' }),
-    ])
-    const byDate = Object.fromEntries(check.salaries.map(r => [r.date, r]))
-    expect(byDate['2026-10-29']).toMatchObject({ salaries: 700, ledgerLabor: 700, diff: 0, ok: true })
-    expect(byDate['2026-10-26']).toMatchObject({ salaries: 600, ledgerLabor: 500, diff: -100, ok: false })
-    expect(check.salaryTotals).toMatchObject({ salaries: 1300, ledgerLabor: 1200, diff: -100 })
-  })
-
-  it('includes ledger Labor on a date with no salary recorded', () => {
-    const s = summary({}, [])
-    const check = buildLedgerCheck(s, [entry('2026-10-24', 'expense', 400, { category: 'Labor' })])
-    expect(check.salaries).toEqual([{ date: '2026-10-24', salaries: 0, ledgerLabor: 400, diff: 400, ok: false }])
-  })
-})
-
 describe('buildLedgerCheck — mismatch count', () => {
-  it('counts each mismatched day, category and salary date once', () => {
-    const s = summary({ '2026-10-23': 1000 }, [expense('2026-10-23', 100, 'Gas')])
-    // Remit is wrong and expenses are missing on the same day → 1 day
-    // Gas category missing → 1 category
+  it('counts each mismatched day once', () => {
+    const s = summary({ '2026-10-23': 1000, '2026-10-24': 500 }, [expense('2026-10-23', 100, 'Gas')])
+    // Oct 23: remit and expenses both wrong → 1 day. Oct 24: no remit → 1 day.
     const check = buildLedgerCheck(s, [entry('2026-10-23', 'pos_remittance', 800)])
     expect(check.mismatchCount).toBe(2)
   })

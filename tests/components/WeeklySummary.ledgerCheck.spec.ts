@@ -39,6 +39,11 @@ vi.mock('../../src/services/expenseService', () => ({
   },
 }))
 
+const startCounts = vi.fn(async () => [{ session_id: 's1', name: 'Cash', start_of_day: 500 }])
+vi.mock('../../src/services/auditService', () => ({
+  AuditService: { getStartCounts: (ids: string[]) => startCounts(ids) },
+}))
+
 vi.mock('../../src/services/menuItemService', () => ({ menuItemService: { getMenuItems: async () => [] } }))
 vi.mock('../../src/services/discountService', () => ({ discountService: { getAll: async () => [] } }))
 
@@ -82,7 +87,7 @@ describe('WeeklySummary ledger check', () => {
   })
 
   it('shows everything matches when the ledger agrees', async () => {
-    ledgerList.mockResolvedValue([ledgerRow('pos_remittance', 800), ledgerRow('expense', 200, 'Supplies')])
+    ledgerList.mockResolvedValue([ledgerRow('pos_remittance', 1500), ledgerRow('expense', 200, 'Supplies')])
     const { el, unmount } = await mountPage()
     expect(el.textContent).toContain('Ledger check')
     expect(el.textContent).toContain('Everything matches')
@@ -90,10 +95,52 @@ describe('WeeklySummary ledger check', () => {
   })
 
   it('counts mismatches when the ledger remit is short', async () => {
-    ledgerList.mockResolvedValue([ledgerRow('pos_remittance', 700), ledgerRow('expense', 200, 'Supplies')])
+    ledgerList.mockResolvedValue([ledgerRow('pos_remittance', 1400), ledgerRow('expense', 200, 'Supplies')])
     const { el, unmount } = await mountPage()
     expect(el.textContent).toContain('1 mismatch')
     expect(el.querySelectorAll('tr.row-bad').length).toBe(1)
+    unmount()
+  })
+
+  it('shows the start-of-day count from the Audit page', async () => {
+    ledgerList.mockResolvedValue([ledgerRow('pos_remittance', 1500), ledgerRow('expense', 200, 'Supplies')])
+    const { el, unmount } = await mountPage()
+    expect(startCounts).toHaveBeenCalledWith(['s1'])
+    expect(el.textContent).toContain('Start count')
+    expect(el.textContent).toContain('₱500.00')
+    unmount()
+  })
+
+  it('shows the owner remit table', async () => {
+    ledgerList.mockResolvedValue([ledgerRow('pos_remittance', 1500), ledgerRow('expense', 200, 'Supplies')])
+    const { el, unmount } = await mountPage()
+    expect(el.textContent).toContain('Owner remit')
+    // Carried in 500, Fri: + 1500 − 500 petty cash − 200 expenses = 1300; next Friday closed → remit 1300
+    expect(el.textContent).toContain('Carried from last week')
+    expect(el.textContent).toContain('Cash on hand')
+    expect(el.textContent).toContain('₱1,300.00')
+    unmount()
+  })
+
+  it('the hand-over card shows the rolling owner remit', async () => {
+    ledgerList.mockResolvedValue([
+      ledgerRow('pos_remittance', 1500),
+      ledgerRow('expense', 200, 'Supplies'),
+      { ...ledgerRow('owner_remittance', 1000), entry_date: '2026-10-29' },
+    ])
+    const { el, unmount } = await mountPage()
+    const card = el.querySelector('.handover-card')!.textContent!
+    expect(card).toContain('₱1,300.00')
+    expect(card).toContain('Thursday cash on hand')
+    expect(card).toContain('Remitted to owner in the ledger: ₱1,000.00')
+    expect(card).not.toContain('Cash sales')
+    unmount()
+  })
+
+  it('the hand-over card waits for the ledger remittances', async () => {
+    ledgerList.mockResolvedValue([])
+    const { el, unmount } = await mountPage()
+    expect(el.querySelector('.handover-card')!.textContent).toContain('No Cart Cash Remittance entered')
     unmount()
   })
 

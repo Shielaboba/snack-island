@@ -96,6 +96,18 @@ export class AuditService {
     if (error) throw error
   }
 
+  /** Cash and Expenses start-of-day counts for several sessions at once. */
+  static async getStartCounts(sessionIds: string[]): Promise<{ session_id: string; name: string; start_of_day: number }[]> {
+    if (sessionIds.length === 0) return []
+    const { data, error } = await supabase
+      .from('audit_cash_snapshots')
+      .select('session_id, name, start_of_day')
+      .in('session_id', sessionIds)
+      .in('name', ['Cash', 'Expenses'])
+    if (error) throw error
+    return data || []
+  }
+
   static async getIngredientSnapshot(sessionId: string): Promise<{ ingredient: string; add_ons: number; yesterday_eod: number; today_eod: number }[]> {
     const { data, error } = await supabase
       .from('audit_ingredient_snapshots')

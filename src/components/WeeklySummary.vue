@@ -22,10 +22,28 @@
       <!-- Handover -->
       <div class="handover-card">
         <div class="handover-label">Expected cash to hand over</div>
-        <div class="handover-amount" :class="{ negative: summary.totals.expectedHandover < 0 }">{{ peso(summary.totals.expectedHandover) }}</div>
-        <div class="handover-math">
-          Cash sales {{ peso(summary.totals.cash) }} − Expenses {{ peso(summary.totals.expenses) }}
-        </div>
+        <template v-if="!check">
+          <div class="handover-amount">—</div>
+          <div class="handover-math">{{ ledgerError || 'The ledger check could not be worked out.' }}</div>
+        </template>
+        <template v-else-if="check.totals.ledgerRemit === 0">
+          <div class="handover-amount">—</div>
+          <div class="handover-math">No Cart Cash Remittance entered in the ledger for this week yet.</div>
+        </template>
+        <template v-else-if="check.owner.ownerRemit === null">
+          <div class="handover-amount">Pending</div>
+          <div class="handover-math">
+            Thursday cash on hand {{ peso(check.owner.days[check.owner.days.length - 1]?.cashOnHand ?? 0) }} − next Friday's petty cash and expense wallet (not opened yet)
+          </div>
+        </template>
+        <template v-else>
+          <div class="handover-amount" :class="{ negative: check.owner.ownerRemit < 0 }">{{ peso(check.owner.ownerRemit) }}</div>
+          <div class="handover-math">
+            Thursday cash on hand {{ peso(check.owner.days[check.owner.days.length - 1]?.cashOnHand ?? 0) }}
+            − set aside for next Friday {{ peso((check.owner.setAside?.pettyCash ?? 0) + (check.owner.setAside?.expenseWallet ?? 0)) }}
+          </div>
+        </template>
+        <div v-if="check" class="handover-math">Remitted to owner in the ledger: {{ peso(check.owner.remitted) }}</div>
       </div>
 
       <div class="stats">
@@ -64,113 +82,128 @@
         <template v-else-if="check">
           <p class="hint top">Ledger amounts are what the auditor entered. Difference = ledger − POS.</p>
 
-          <div class="owner-row">
-            <div>
-              <div class="stat-label">Expected owner remit</div>
-              <div class="owner-value">{{ peso(check.owner.expected) }}</div>
-              <div class="sub">Cash sales − ledger expenses</div>
-            </div>
-            <div>
-              <div class="stat-label">Remitted to owner</div>
-              <div class="owner-value">{{ peso(check.owner.remitted) }}</div>
-            </div>
-            <div>
-              <div class="stat-label">Kept for next week</div>
-              <div class="owner-value">{{ peso(check.owner.kept) }}</div>
-              <div class="sub">Info only, not a mismatch</div>
-            </div>
-          </div>
-
+          <h3 class="sub-title">Cart cash remittance</h3>
           <div class="table-wrap">
             <table class="table">
               <thead>
                 <tr>
                   <th>Day</th>
+                  <th class="num">Cash sales</th>
+                  <th class="num">Start count</th>
                   <th class="num">Expected remit</th>
                   <th class="num">Ledger remit</th>
                   <th class="num">Diff</th>
-                  <th class="num">Expenses page</th>
-                  <th class="num">Ledger expenses</th>
-                  <th class="num">Diff</th>
-                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="d in check.days" :key="d.date" :class="{ 'row-bad': !d.ok }">
+                <tr v-for="d in check.days" :key="d.date" :class="{ 'row-bad': d.remitDiff !== 0 }">
                   <td>{{ formatDay(d.date) }}</td>
-                  <td class="num">{{ peso(d.expectedRemit) }}</td>
+                  <td class="num">{{ peso(d.cashSales) }}</td>
+                  <td class="num">{{ peso(d.startCount) }}</td>
+                  <td class="num strong">{{ peso(d.expectedRemit) }}</td>
                   <td class="num">{{ peso(d.ledgerRemit) }}</td>
                   <td class="num" :class="diffClass(d.remitDiff)">{{ signedPeso(d.remitDiff) }}</td>
-                  <td class="num">{{ peso(d.posExpenses) }}</td>
-                  <td class="num">{{ peso(d.ledgerExpenses) }}</td>
-                  <td class="num" :class="diffClass(d.expenseDiff)">{{ signedPeso(d.expenseDiff) }}</td>
-                  <td><span class="pill" :class="d.ok ? 'pill-ok' : 'pill-missing'">{{ d.ok ? '✓' : 'Check' }}</span></td>
                 </tr>
               </tbody>
               <tfoot>
                 <tr>
                   <td>Total</td>
+                  <td class="num">{{ peso(check.totals.cashSales) }}</td>
+                  <td class="num">{{ peso(check.totals.startCount) }}</td>
                   <td class="num">{{ peso(check.totals.expectedRemit) }}</td>
                   <td class="num">{{ peso(check.totals.ledgerRemit) }}</td>
                   <td class="num" :class="diffClass(check.totals.remitDiff)">{{ signedPeso(check.totals.remitDiff) }}</td>
-                  <td class="num">{{ peso(check.totals.posExpenses) }}</td>
-                  <td class="num">{{ peso(check.totals.ledgerExpenses) }}</td>
-                  <td class="num" :class="diffClass(check.totals.expenseDiff)">{{ signedPeso(check.totals.expenseDiff) }}</td>
-                  <td></td>
                 </tr>
               </tfoot>
             </table>
           </div>
-          <p class="hint">Expected remit = that day's cash sales − that day's expenses on the Expenses page.</p>
+          <p class="hint">Expected remit = that day's cash sales + the Cash "Start of Day Count" saved on the Audit page. Ledger remit is the Cart Cash Remittance total.</p>
 
-          <div class="two-col check-cols">
-            <div>
-              <h3 class="sub-title">Expenses by category</h3>
-              <div v-if="check.categories.length === 0" class="empty">No expenses on either side.</div>
-              <div v-else class="table-wrap">
-                <table class="table">
-                  <thead>
-                    <tr><th>Category</th><th class="num">Expenses page</th><th class="num">Ledger</th><th class="num">Diff</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="c in check.categories" :key="c.category" :class="{ 'row-bad': !c.ok }">
-                      <td>{{ c.category }}</td>
-                      <td class="num">{{ peso(c.pos) }}</td>
-                      <td class="num">{{ peso(c.ledger) }}</td>
-                      <td class="num" :class="diffClass(c.diff)">{{ signedPeso(c.diff) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div>
-              <h3 class="sub-title">Salaries vs ledger Labor</h3>
-              <div v-if="check.salaries.length === 0" class="empty">No salaries or Labor entries this week.</div>
-              <div v-else class="table-wrap">
-                <table class="table">
-                  <thead>
-                    <tr><th>Date</th><th class="num">Salaries</th><th class="num">Ledger Labor</th><th class="num">Diff</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="r in check.salaries" :key="r.date" :class="{ 'row-bad': !r.ok }">
-                      <td>{{ formatDay(r.date) }}</td>
-                      <td class="num">{{ peso(r.salaries) }}</td>
-                      <td class="num">{{ peso(r.ledgerLabor) }}</td>
-                      <td class="num" :class="diffClass(r.diff)">{{ signedPeso(r.diff) }}</td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td>Total</td>
-                      <td class="num">{{ peso(check.salaryTotals.salaries) }}</td>
-                      <td class="num">{{ peso(check.salaryTotals.ledgerLabor) }}</td>
-                      <td class="num" :class="diffClass(check.salaryTotals.diff)">{{ signedPeso(check.salaryTotals.diff) }}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
+          <h3 class="sub-title spaced">Expenses</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th class="num">Expenses page</th>
+                  <th class="num">Ledger expenses</th>
+                  <th class="num">Diff</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in check.days" :key="d.date" :class="{ 'row-bad': d.expenseDiff !== 0 }">
+                  <td>{{ formatDay(d.date) }}</td>
+                  <td class="num">{{ peso(d.posExpenses) }}</td>
+                  <td class="num">{{ peso(d.ledgerExpenses) }}</td>
+                  <td class="num" :class="diffClass(d.expenseDiff)">{{ signedPeso(d.expenseDiff) }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td class="num">{{ peso(check.totals.posExpenses) }}</td>
+                  <td class="num">{{ peso(check.totals.ledgerExpenses) }}</td>
+                  <td class="num" :class="diffClass(check.totals.expenseDiff)">{{ signedPeso(check.totals.expenseDiff) }}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
+
+          <h3 class="sub-title spaced">Owner remit</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th class="num">Remittance</th>
+                  <th class="num">Petty cash out</th>
+                  <th class="num">Expenses</th>
+                  <th class="num">Cash on hand</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="carry-row">
+                  <td>Carried from last week</td>
+                  <td colspan="3" class="sub">This Friday's petty cash + expense wallet</td>
+                  <td class="num">{{ peso(check.owner.carriedIn) }}</td>
+                </tr>
+                <tr v-for="d in check.owner.days" :key="d.date">
+                  <td>{{ formatDay(d.date) }}</td>
+                  <td class="num">{{ peso(d.remittance) }}</td>
+                  <td class="num">−{{ peso(d.pettyCashOut) }}</td>
+                  <td class="num">−{{ peso(d.expenses) }}</td>
+                  <td class="num strong" :class="{ negative: d.cashOnHand < 0 }">{{ peso(d.cashOnHand) }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="carry-row">
+                  <td>Set aside for next Friday</td>
+                  <td colspan="3" class="sub">
+                    <template v-if="check.owner.setAside">
+                      Petty cash {{ peso(check.owner.setAside.pettyCash) }} + expense wallet {{ peso(check.owner.setAside.expenseWallet) }}
+                    </template>
+                    <template v-else>Next Friday hasn't opened yet</template>
+                  </td>
+                  <td class="num">
+                    {{ check.owner.setAside ? '−' + peso(check.owner.setAside.pettyCash + check.owner.setAside.expenseWallet) : '—' }}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Owner remit</td>
+                  <td colspan="3"></td>
+                  <td class="num">
+                    <span v-if="check.owner.ownerRemit === null" class="closed-tag">Pending</span>
+                    <span v-else :class="{ negative: check.owner.ownerRemit < 0 }">{{ peso(check.owner.ownerRemit) }}</span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p class="hint">
+            Cash rolls day to day: cash on hand + Cart Cash Remittance − petty cash given out (Audit Cash "Start of Day Count") − Expenses page total.
+            Petty cash comes back in the next remittance, and the expense wallet only pays for the expenses.
+            Owner remit = Thursday's cash on hand − next Friday's petty cash and expense wallet.
+          </p>
         </template>
       </div>
 
@@ -358,11 +391,12 @@ import { OrderService } from '../services/orderService'
 import { expenseService } from '../services/expenseService'
 import { menuItemService } from '../services/menuItemService'
 import { discountService } from '../services/discountService'
-import { buildWeeklySummary, getCompletedWeek, sessionsInWeek, type WeeklySummary } from '../modules/weekly/weeklySummary'
+import { addDays, buildWeeklySummary, getCompletedWeek, sessionsInWeek, toPHDate, type WeeklySummary } from '../modules/weekly/weeklySummary'
 import type { PaymentMethod } from '../models'
 import { SALARY_SCHEDULE_TEXT } from '../modules/salary/salarySchedule'
 import { ledgerService } from '../services/ledgerService'
-import { buildLedgerCheck } from '../modules/weekly/ledgerCheck'
+import { auditCountsByDay, buildLedgerCheck, type AuditDayCounts } from '../modules/weekly/ledgerCheck'
+import { AuditService } from '../services/auditService'
 import type { LedgerEntry } from '../models/Ledger'
 
 const weeksBack = ref(0)
@@ -372,7 +406,11 @@ const error = ref('')
 const summary = ref<WeeklySummary | null>(null)
 const ledger = ref<LedgerEntry[] | null>(null)
 const ledgerError = ref('')
-const check = computed(() => (summary.value && ledger.value ? buildLedgerCheck(summary.value, ledger.value) : null))
+const auditCounts = ref<Record<string, AuditDayCounts>>({})
+const today = ref('')
+const check = computed(() =>
+  summary.value && ledger.value ? buildLedgerCheck(summary.value, ledger.value, auditCounts.value, today.value) : null,
+)
 
 function signedPeso(n: number): string {
   if (n === 0) return '—'
@@ -430,6 +468,16 @@ async function load() {
     const weekSessions = sessionsInWeek(sessions, range)
     let orders: Awaited<ReturnType<typeof OrderService.getOrders>> = []
     let items: Awaited<ReturnType<typeof OrderService.getOrderItemsBulk>> = []
+    // Owner remit needs "tomorrow", so Thursday reads the next Friday's audit too
+    const nextFriday = addDays(range.end, 1)
+    const auditSessions = [...weekSessions, ...sessions.filter(s => toPHDate(s.opened_at) === nextFriday)]
+    const countsLoad = AuditService.getStartCounts(auditSessions.map(s => s.id)).then(
+      rows => ({ counts: auditCountsByDay(auditSessions, rows), failed: false }),
+      e => {
+        console.error('Error loading audit start counts:', e)
+        return { counts: {}, failed: true }
+      },
+    )
     if (weekSessions.length > 0) {
       const ranges = weekSessions.map(s => StoreSessionService.getSessionRange(s))
       const startDate = new Date(Math.min(...ranges.map(r => r.start.getTime())))
@@ -438,11 +486,18 @@ async function load() {
       items = await OrderService.getOrderItemsBulk(orders.map(o => o.id))
     }
 
-    const ledgerResult = await ledgerLoad
+    const [ledgerResult, countsResult] = await Promise.all([ledgerLoad, countsLoad])
     if (id !== loadId) return
-    ledger.value = ledgerResult.rows
-    ledgerError.value = ledgerResult.failed ? 'Could not load the ledger, so the ledger check is not shown.' : ''
-    summary.value =buildWeeklySummary({ week: range, sessions: weekSessions, orders, items, expenses, menuItems, discounts, now })
+    const checkFailed = ledgerResult.failed || countsResult.failed
+    ledger.value = checkFailed ? null : ledgerResult.rows
+    auditCounts.value = countsResult.counts
+    today.value = toPHDate(now)
+    ledgerError.value = ledgerResult.failed
+      ? 'Could not load the ledger, so the ledger check is not shown.'
+      : countsResult.failed
+        ? 'Could not load the Audit page start-of-day counts, so the ledger check is not shown.'
+        : ''
+    summary.value = buildWeeklySummary({ week: range, sessions: weekSessions, orders, items, expenses, menuItems, discounts, now })
   } catch (e) {
     console.error('Error loading weekly summary:', e)
     if (id === loadId) error.value = 'Could not load this week. Please try again.'
@@ -748,34 +803,22 @@ tr.closed td {
   margin: 0 0 12px;
 }
 
-.owner-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  background: #f9fafb;
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-}
-
-.owner-value {
-  font-size: 18px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+tr.carry-row td {
+  color: #6b7280;
 }
 
 tr.row-bad td {
   background: #fef2f2;
 }
 
-.check-cols {
-  margin-top: 18px;
-}
-
 .sub-title {
   font-size: 14px;
   font-weight: 600;
   margin: 0 0 8px;
+}
+
+.sub-title.spaced {
+  margin-top: 20px;
 }
 
 .salary-alert {

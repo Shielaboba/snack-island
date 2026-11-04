@@ -4,6 +4,7 @@ import { createApp, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Ledger from '../../src/components/Ledger.vue'
 import type { LedgerEntry } from '../../src/models/Ledger'
+import { manilaYmd } from '../../src/modules/ledger/ledgerUtils'
 
 const entries: LedgerEntry[] = [
   {
@@ -36,13 +37,14 @@ const entries: LedgerEntry[] = [
 
 const list = vi.fn(async () => entries)
 const create = vi.fn(async () => entries)
+const remove = vi.fn(async () => undefined)
 
 vi.mock('../../src/services/ledgerService', () => ({
   ledgerService: {
     list: (...args: unknown[]) => list(...args),
     create: (...args: unknown[]) => create(...args),
     update: vi.fn(),
-    remove: vi.fn()
+    remove: (...args: unknown[]) => remove(...args)
   }
 }))
 
@@ -70,6 +72,8 @@ describe('Ledger.vue', () => {
     document.body.innerHTML = ''
     list.mockClear()
     create.mockClear()
+    remove.mockClear()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   it('shows remaining cards from all entries, not only the filtered week', async () => {
@@ -197,6 +201,54 @@ describe('Ledger.vue', () => {
     expect(create).toHaveBeenCalledTimes(1)
     resolveCreate()
     await nextTick()
+    app.unmount()
+  })
+
+  it('opens a delete confirmation modal instead of window.confirm', async () => {
+    list.mockResolvedValueOnce([
+      { ...entries[0], id: 'del-1', entry_date: manilaYmd(new Date()) }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="delete-entry-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="ledger-delete-modal"]')).not.toBeNull()
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('does not delete when Cancel is clicked', async () => {
+    list.mockResolvedValueOnce([
+      { ...entries[0], id: 'del-1', entry_date: manilaYmd(new Date()) }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="delete-entry-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    ;(document.querySelector('[data-testid="ledger-delete-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(remove).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="ledger-delete-modal"]')).toBeNull()
+    app.unmount()
+  })
+
+  it('deletes after the confirmation modal is confirmed', async () => {
+    list.mockResolvedValue([
+      { ...entries[0], id: 'del-1', entry_date: manilaYmd(new Date()) }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="delete-entry-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    ;(document.querySelector('[data-testid="ledger-delete-confirm"]') as HTMLButtonElement).click()
+    await nextTick()
+    await nextTick()
+    expect(remove).toHaveBeenCalledWith('del-1', expect.any(Array))
+    expect(remove).toHaveBeenCalledTimes(1)
     app.unmount()
   })
 })

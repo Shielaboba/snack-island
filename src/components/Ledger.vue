@@ -88,7 +88,7 @@
       </div>
     </div>
 
-    <p v-if="error && !modalOpen" class="error-state">{{ error }}</p>
+    <p v-if="error && !modalOpen && !deleteOpen" class="error-state">{{ error }}</p>
     <p v-if="isLoading" class="empty-state">Loading ledger…</p>
     <p v-else-if="visibleRows.length === 0" class="empty-state">
       No lines in this range. Add starting cash or record a remittance from the POS.
@@ -123,7 +123,7 @@
           <td>{{ row.note || '—' }}</td>
           <td>
             <button type="button" class="link-btn" @click="openEdit(row)">Edit</button>
-            <button type="button" class="link-btn" @click="onDelete(row)">Delete</button>
+            <button type="button" class="link-btn" data-testid="delete-entry-btn" @click="openDelete(row)">Delete</button>
           </td>
         </tr>
       </tbody>
@@ -138,12 +138,21 @@
       @submit="onSubmit"
       @close="closeModal"
     />
+    <LedgerDeleteModal
+      :is-open="deleteOpen"
+      :entry="pendingDelete"
+      :deleting="isSaving"
+      :error="deleteOpen ? error : ''"
+      @confirm="confirmDelete"
+      @close="closeDelete"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import LedgerEntryModal from './LedgerEntryModal.vue'
+import LedgerDeleteModal from './LedgerDeleteModal.vue'
 import { authService } from '../services/authService'
 import { ledgerService } from '../services/ledgerService'
 import { LEDGER_ENTRY_TYPES, LEDGER_WALLETS, type CreateLedgerEntryInput, type LedgerEntry, type LedgerWallet } from '../models/Ledger'
@@ -163,8 +172,10 @@ const error = ref('')
 const isLoading = ref(false)
 const isSaving = ref(false)
 const modalOpen = ref(false)
+const deleteOpen = ref(false)
 const modalMode = ref<'add' | 'remit-owner' | 'edit'>('add')
 const editing = ref<LedgerEntry | null>(null)
+const pendingDelete = ref<LedgerEntry | null>(null)
 const week = manilaWeekWindow()
 const startDate = ref(week.start)
 const endDate = ref(week.end)
@@ -293,13 +304,27 @@ async function onSubmit(input: CreateLedgerEntryInput) {
   }
 }
 
-async function onDelete(row: LedgerEntry) {
-  const label = ledgerTypeLabel(row.type)
+function openDelete(row: LedgerEntry) {
+  error.value = ''
+  pendingDelete.value = row
+  deleteOpen.value = true
+}
+
+function closeDelete() {
   if (isSaving.value) return
-  if (!confirm(`Delete ${label} of ₱${formatCurrency(row.amount)}?`)) return
+  deleteOpen.value = false
+  pendingDelete.value = null
+}
+
+async function confirmDelete() {
+  const row = pendingDelete.value
+  if (!row || isSaving.value) return
   isSaving.value = true
+  error.value = ''
   try {
     await ledgerService.remove(row.id, entries.value)
+    deleteOpen.value = false
+    pendingDelete.value = null
     await load()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to delete ledger entry.'

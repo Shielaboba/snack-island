@@ -16,4 +16,29 @@ describe('ledger_entries migration is additive', () => {
     expect(sql).not.toMatch(/DROP TABLE/i)
     expect(sql).not.toMatch(/REFERENCES\s+(orders|expenses|store_sessions)/i)
   })
+
+  it('allows expense and GCash wallets instead of a standing petty-cash float', () => {
+    expect(sql).toMatch(/'auditor_cash'/)
+    expect(sql).toMatch(/'expense'/)
+    expect(sql).toMatch(/'gcash'/)
+    expect(sql).toMatch(/'fund_expense'/)
+    expect(sql).toMatch(/'gcash_remittance'/)
+    expect(sql).not.toMatch(/petty_cash/)
+    expect(sql).not.toMatch(/petty_issue/)
+  })
+})
+
+const walletSql = readFileSync(
+  resolve(process.cwd(), 'migrations/migration_ledger_expense_gcash_wallets.sql'),
+  'utf8'
+)
+
+describe('ledger wallet follow-up migration', () => {
+  it('remaps petty cash to expense wallet without touching other tables', () => {
+    expect(walletSql).toMatch(/fund_expense/)
+    expect(walletSql).toMatch(/gcash/)
+    expect(walletSql).toMatch(/UPDATE ledger_entries SET wallet = 'expense' WHERE wallet = 'petty_cash'/)
+    expect(walletSql).not.toMatch(/ALTER TABLE\s+(orders|expenses|store_sessions|order_items|inventory)/i)
+    expect(walletSql).not.toMatch(/DROP TABLE/i)
+  })
 })

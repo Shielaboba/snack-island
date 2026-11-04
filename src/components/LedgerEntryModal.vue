@@ -48,8 +48,9 @@
                 data-testid="ledger-wallet"
                 :disabled="walletLocked"
               >
-                <option value="auditor_cash">Auditor cash</option>
-                <option value="petty_cash">Petty cash</option>
+                <option v-for="wallet in LEDGER_WALLETS" :key="wallet" :value="wallet">
+                  {{ ledgerWalletLabel(wallet) }}
+                </option>
               </select>
             </div>
             <div v-if="showCategory" class="form-section">
@@ -108,12 +109,13 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   LEDGER_ENTRY_TYPES,
   LEDGER_EXPENSE_CATEGORIES,
+  LEDGER_WALLETS,
   type CreateLedgerEntryInput,
   type LedgerEntry,
   type LedgerEntryType,
   type LedgerWallet
 } from '../models/Ledger'
-import { ledgerTypeLabel, manilaYmd } from '../modules/ledger/ledgerUtils'
+import { ledgerTypeLabel, ledgerWalletLabel, manilaYmd } from '../modules/ledger/ledgerUtils'
 
 const props = defineProps<{
   isOpen: boolean
@@ -143,7 +145,8 @@ const auditorLockedTypes: LedgerEntryType[] = [
   'opening_cash',
   'pos_float',
   'pos_remittance',
-  'owner_remittance'
+  'owner_remittance',
+  'fund_expense'
 ]
 
 watch(
@@ -185,6 +188,7 @@ watch(
   () => form.type,
   (type) => {
     if (auditorLockedTypes.includes(type)) form.wallet = 'auditor_cash'
+    if (type === 'gcash_remittance') form.wallet = 'gcash'
     if (type !== 'expense') form.category = null
   }
 )
@@ -193,6 +197,7 @@ const showCategory = computed(() => form.type === 'expense')
 const walletLocked = computed(
   () =>
     auditorLockedTypes.includes(form.type) ||
+    form.type === 'gcash_remittance' ||
     props.mode === 'remit-owner' ||
     props.mode === 'edit'
 )

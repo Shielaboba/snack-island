@@ -88,23 +88,50 @@ describe('ledgerService.create', () => {
     expect(supabase.from).toHaveBeenCalledWith('ledger_entries')
   })
 
-  it('inserts two petty_issue rows with the same transfer_id', async () => {
+  it('inserts two fund_expense rows with the same transfer_id', async () => {
     const pair = [
-      { ...opening, id: 'a', type: 'petty_issue' as const, amount: 500, transfer_id: 'tid', wallet: 'auditor_cash' as const },
-      { ...opening, id: 'b', type: 'petty_issue' as const, amount: 500, transfer_id: 'tid', wallet: 'petty_cash' as const, category: null }
+      { ...opening, id: 'a', type: 'fund_expense' as const, amount: 500, transfer_id: 'tid', wallet: 'auditor_cash' as const },
+      { ...opening, id: 'b', type: 'fund_expense' as const, amount: 500, transfer_id: 'tid', wallet: 'expense' as const, category: null }
     ]
     const mockSelect = vi.fn().mockResolvedValue({ data: pair, error: null })
     const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
     vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
 
     await ledgerService.create(
-      { entry_date: '2026-09-21', type: 'petty_issue', wallet: 'auditor_cash', amount: 500 },
+      { entry_date: '2026-09-21', type: 'fund_expense', wallet: 'auditor_cash', amount: 500 },
       [opening]
     )
-    const payload = mockInsert.mock.calls[0][0] as Array<{ transfer_id: string; wallet: string }>
+    const payload = mockInsert.mock.calls[0][0] as Array<{ transfer_id: string; wallet: string; type: string }>
     expect(payload).toHaveLength(2)
     expect(payload[0].transfer_id).toBe(payload[1].transfer_id)
-    expect(payload.map((row) => row.wallet).sort()).toEqual(['auditor_cash', 'petty_cash'])
+    expect(payload.map((row) => row.wallet).sort()).toEqual(['auditor_cash', 'expense'])
+    expect(payload.every((row) => row.type === 'fund_expense')).toBe(true)
+  })
+
+  it('inserts a single gcash_remittance row on the GCash wallet', async () => {
+    const inserted = {
+      ...opening,
+      id: 'g1',
+      type: 'gcash_remittance' as const,
+      wallet: 'gcash' as const,
+      amount: 750
+    }
+    const mockSelect = vi.fn().mockResolvedValue({ data: [inserted], error: null })
+    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
+    vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
+
+    await ledgerService.create(
+      { entry_date: '2026-09-21', type: 'gcash_remittance', wallet: 'gcash', amount: 750 },
+      []
+    )
+    expect(mockInsert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: 'gcash_remittance',
+        wallet: 'gcash',
+        amount: 750,
+        transfer_id: null
+      })
+    ])
   })
 
   it('throws when owner remit exceeds remaining', async () => {
@@ -121,15 +148,15 @@ describe('ledgerService.create', () => {
 describe('ledgerService.update and remove', () => {
   const transferId = 'xfer-1'
   const pair: LedgerEntry[] = [
-    { ...opening, id: 'p1', type: 'petty_issue', amount: 500, transfer_id: transferId, wallet: 'auditor_cash' },
-    { ...opening, id: 'p2', type: 'petty_issue', amount: 500, transfer_id: transferId, wallet: 'petty_cash' }
+    { ...opening, id: 'p1', type: 'fund_expense', amount: 500, transfer_id: transferId, wallet: 'auditor_cash' },
+    { ...opening, id: 'p2', type: 'fund_expense', amount: 500, transfer_id: transferId, wallet: 'expense' }
   ]
 
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('update of one petty_issue row updates both by transfer_id', async () => {
+  it('update of one fund_expense row updates both by transfer_id', async () => {
     const mockIn = vi.fn().mockResolvedValue({ data: pair, error: null })
     const mockSelect = vi.fn().mockReturnValue({ in: mockIn })
     const mockEq = vi.fn().mockReturnValue({ select: mockSelect })
@@ -141,7 +168,7 @@ describe('ledgerService.update and remove', () => {
     expect(mockEq).toHaveBeenCalledWith('transfer_id', transferId)
   })
 
-  it('remove of one petty_issue row deletes both by transfer_id', async () => {
+  it('remove of one fund_expense row deletes both by transfer_id', async () => {
     const mockEq = vi.fn().mockResolvedValue({ error: null })
     const mockDelete = vi.fn().mockReturnValue({ eq: mockEq })
     vi.mocked(supabase.from).mockReturnValue({ delete: mockDelete } as any)
@@ -151,23 +178,23 @@ describe('ledgerService.update and remove', () => {
   })
 
   it('ignores patch.wallet and validates the stored wallet', async () => {
-    const pettyExpense: LedgerEntry = {
+    const expenseSpend: LedgerEntry = {
       ...opening,
       id: 'e1',
       type: 'expense',
-      wallet: 'petty_cash',
+      wallet: 'expense',
       amount: 10,
       category: 'Supplies'
     }
     const existing: LedgerEntry[] = [
       opening,
-      { ...opening, id: 'p1', type: 'petty_issue', amount: 80, transfer_id: 't', wallet: 'auditor_cash' },
-      { ...opening, id: 'p2', type: 'petty_issue', amount: 80, transfer_id: 't', wallet: 'petty_cash' },
-      pettyExpense
+      { ...opening, id: 'p1', type: 'fund_expense', amount: 80, transfer_id: 't', wallet: 'auditor_cash' },
+      { ...opening, id: 'p2', type: 'fund_expense', amount: 80, transfer_id: 't', wallet: 'expense' },
+      expenseSpend
     ]
     await expect(
       ledgerService.update('e1', { amount: 100, wallet: 'auditor_cash' }, existing)
-    ).rejects.toThrow(/Petty cash remaining/)
+    ).rejects.toThrow(/Expense wallet remaining/)
     expect(supabase.from).not.toHaveBeenCalled()
   })
 

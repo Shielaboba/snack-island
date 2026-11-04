@@ -9,11 +9,12 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     'opening_cash',
     'pos_float',
     'pos_remittance',
+    'gcash_remittance',
     'owner_remittance',
-    'petty_issue',
+    'fund_expense',
     'expense'
   )),
-  wallet TEXT NOT NULL CHECK (wallet IN ('auditor_cash', 'petty_cash')),
+  wallet TEXT NOT NULL CHECK (wallet IN ('auditor_cash', 'expense', 'gcash')),
   amount NUMERIC NOT NULL CHECK (amount > 0),
   category TEXT,
   note TEXT,
@@ -25,13 +26,19 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     (type = 'expense' AND category IS NOT NULL)
     OR (type <> 'expense' AND category IS NULL)
   ),
-  CONSTRAINT ledger_entries_petty_transfer_chk CHECK (
-    (type = 'petty_issue' AND transfer_id IS NOT NULL)
-    OR (type <> 'petty_issue' AND transfer_id IS NULL)
+  CONSTRAINT ledger_entries_transfer_chk CHECK (
+    (type = 'fund_expense' AND transfer_id IS NOT NULL)
+    OR (type <> 'fund_expense' AND transfer_id IS NULL)
   ),
   CONSTRAINT ledger_entries_auditor_wallet_chk CHECK (
     type NOT IN ('opening_cash', 'pos_float', 'pos_remittance', 'owner_remittance')
     OR wallet = 'auditor_cash'
+  ),
+  CONSTRAINT ledger_entries_gcash_wallet_chk CHECK (
+    type <> 'gcash_remittance' OR wallet = 'gcash'
+  ),
+  CONSTRAINT ledger_entries_fund_expense_wallet_chk CHECK (
+    type <> 'fund_expense' OR wallet IN ('auditor_cash', 'expense')
   )
 );
 

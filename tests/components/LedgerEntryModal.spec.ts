@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import LedgerEntryModal from '../../src/components/LedgerEntryModal.vue'
+import { manilaYmd } from '../../src/modules/ledger/ledgerUtils'
 
 function mountModal(props: Record<string, unknown>) {
   const el = document.createElement('div')
@@ -40,6 +41,32 @@ describe('LedgerEntryModal', () => {
     type.dispatchEvent(new Event('change'))
     await nextTick()
     expect(document.querySelector('[data-testid="ledger-category"]')).not.toBeNull()
+    app.unmount()
+  })
+
+  it('keeps trailing decimal zeros while typing an amount', async () => {
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const amount = document.querySelector('[data-testid="ledger-amount"]') as HTMLInputElement
+    let typed = ''
+    for (const ch of ['5', '0', '0', '.', '0', '0']) {
+      typed += ch
+      amount.value = typed
+      amount.dispatchEvent(new Event('input'))
+      await nextTick()
+      expect(amount.value).toBe(typed)
+    }
+    ;(document.querySelector('[data-testid="ledger-submit"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(getSubmitted()).toEqual(expect.objectContaining({ amount: 500 }))
+    app.unmount()
+  })
+
+  it('defaults the date to the Manila calendar day', async () => {
+    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const date = document.querySelector('input[type="date"]') as HTMLInputElement
+    expect(date.value).toBe(manilaYmd(new Date()))
     app.unmount()
   })
 })

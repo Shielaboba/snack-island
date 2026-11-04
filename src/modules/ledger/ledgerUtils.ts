@@ -54,7 +54,7 @@ export function manilaYmd(date: Date): string {
 }
 
 function addDaysToYmd(ymd: string, days: number): string {
-  const [year, month, day] = ymd.split('-').map(Number)
+  const [year = 0, month = 1, day = 1] = ymd.split('-').map(Number)
   const utc = new Date(Date.UTC(year, month - 1, day + days))
   return utc.toISOString().slice(0, 10)
 }

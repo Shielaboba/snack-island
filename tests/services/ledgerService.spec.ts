@@ -150,6 +150,27 @@ describe('ledgerService.update and remove', () => {
     expect(mockEq).toHaveBeenCalledWith('transfer_id', transferId)
   })
 
+  it('ignores patch.wallet and validates the stored wallet', async () => {
+    const pettyExpense: LedgerEntry = {
+      ...opening,
+      id: 'e1',
+      type: 'expense',
+      wallet: 'petty_cash',
+      amount: 10,
+      category: 'Supplies'
+    }
+    const existing: LedgerEntry[] = [
+      opening,
+      { ...opening, id: 'p1', type: 'petty_issue', amount: 80, transfer_id: 't', wallet: 'auditor_cash' },
+      { ...opening, id: 'p2', type: 'petty_issue', amount: 80, transfer_id: 't', wallet: 'petty_cash' },
+      pettyExpense
+    ]
+    await expect(
+      ledgerService.update('e1', { amount: 100, wallet: 'auditor_cash' }, existing)
+    ).rejects.toThrow(/Petty cash remaining/)
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
   it('remove of a normal row deletes by id', async () => {
     const mockEq = vi.fn().mockResolvedValue({ error: null })
     const mockDelete = vi.fn().mockReturnValue({ eq: mockEq })

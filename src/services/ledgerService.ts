@@ -68,8 +68,8 @@ export const ledgerService = {
     if (!current) throw new Error('Ledger entry not found.')
     const merged: CreateLedgerEntryInput = {
       entry_date: patch.entry_date ?? current.entry_date,
-      type: patch.type ?? current.type,
-      wallet: patch.wallet ?? current.wallet,
+      type: current.type,
+      wallet: current.wallet,
       amount: patch.amount ?? current.amount,
       category: patch.category !== undefined ? patch.category : current.category,
       note: patch.note !== undefined ? patch.note : current.note,

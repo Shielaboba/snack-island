@@ -22,7 +22,7 @@
                 v-model="form.type"
                 class="form-select"
                 data-testid="ledger-type"
-                :disabled="props.mode === 'edit'"
+                :disabled="typeLocked"
                 @change="onTypeChange"
               >
                 <option v-for="entryType in LEDGER_ENTRY_TYPES" :key="entryType" :value="entryType">
@@ -68,16 +68,16 @@
             <div class="form-section">
               <label class="form-label">Amount (₱) <span class="required">*</span></label>
               <input
-                :value="form.amount || ''"
-                type="number"
-                min="0"
-                step="0.01"
+                v-model="amountText"
+                type="text"
+                inputmode="decimal"
                 class="form-input"
                 data-testid="ledger-amount"
-                @input="onAmountInput"
               />
             </div>
           </div>
+
+          <p v-if="error" class="modal-error" data-testid="ledger-modal-error">{{ error }}</p>
 
           <div class="form-section">
             <label class="form-label">Note</label>
@@ -95,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import {
   LEDGER_ENTRY_TYPES,
   LEDGER_EXPENSE_CATEGORIES,
@@ -104,13 +104,16 @@ import {
   type LedgerEntryType,
   type LedgerWallet
 } from '../models/Ledger'
-import { ledgerTypeLabel } from '../modules/ledger/ledgerUtils'
+import { ledgerTypeLabel, manilaYmd } from '../modules/ledger/ledgerUtils'
 
 const props = defineProps<{
   isOpen: boolean
   mode: 'add' | 'remit-owner' | 'edit'
   entry?: LedgerEntry | null
+  error?: string
 }>()
+
+const amountText = ref('')
 
 const emit = defineEmits<{
   submit: [value: CreateLedgerEntryInput]
@@ -138,12 +141,13 @@ watch(
   () => {
     if (!props.isOpen) return
     if (props.mode === 'remit-owner') {
-      form.entry_date = new Date().toISOString().slice(0, 10)
+      form.entry_date = manilaYmd(new Date())
       form.type = 'owner_remittance'
       form.wallet = 'auditor_cash'
       form.amount = 0
       form.category = null
       form.note = ''
+      amountText.value = ''
       return
     }
     if (props.mode === 'edit' && props.entry) {
@@ -153,14 +157,16 @@ watch(
       form.amount = props.entry.amount
       form.category = props.entry.category
       form.note = props.entry.note ?? ''
+      amountText.value = String(props.entry.amount)
       return
     }
-    form.entry_date = new Date().toISOString().slice(0, 10)
+    form.entry_date = manilaYmd(new Date())
     form.type = 'opening_cash'
     form.wallet = 'auditor_cash'
     form.amount = 0
     form.category = null
     form.note = ''
+    amountText.value = ''
   },
   { immediate: true }
 )
@@ -175,7 +181,10 @@ watch(
 
 const showCategory = computed(() => form.type === 'expense')
 const walletLocked = computed(
-  () => auditorLockedTypes.includes(form.type) || props.mode === 'remit-owner'
+  () =>
+    auditorLockedTypes.includes(form.type) ||
+    props.mode === 'remit-owner' ||
+    props.mode === 'edit'
 )
 const typeLocked = computed(() => props.mode === 'remit-owner' || props.mode === 'edit')
 const title = computed(() => {
@@ -188,10 +197,6 @@ function onTypeChange(event: Event) {
   form.type = (event.target as HTMLSelectElement).value as LedgerEntryType
 }
 
-function onAmountInput(event: Event) {
-  form.amount = Number((event.target as HTMLInputElement).value)
-}
-
 function onCategoryChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value
   form.category = (value || null) as CreateLedgerEntryInput['category']
@@ -202,7 +207,7 @@ function onSubmit() {
     entry_date: form.entry_date,
     type: form.type,
     wallet: form.wallet as LedgerWallet,
-    amount: Number(form.amount),
+    amount: Number(amountText.value),
     category: form.type === 'expense' ? form.category : null,
     note: form.note || null
   })
@@ -268,6 +273,14 @@ function onSubmit() {
   font-size: 0.9rem;
 }
 .required { color: #dc3545; }
+.modal-error {
+  color: #dc3545;
+  background: #fff5f5;
+  border: 1px solid #ffc9c9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
 .form-input,
 .form-select {
   width: 100%;

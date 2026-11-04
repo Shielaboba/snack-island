@@ -67,8 +67,8 @@
       </div>
     </div>
 
-    <p v-if="error" class="error-state">{{ error }}</p>
-    <p v-else-if="isLoading" class="empty-state">Loading ledger…</p>
+    <p v-if="error && !modalOpen" class="error-state">{{ error }}</p>
+    <p v-if="isLoading" class="empty-state">Loading ledger…</p>
     <p v-else-if="visibleRows.length === 0" class="empty-state">
       No lines in this range. Add starting cash or record a remittance from the POS.
     </p>
@@ -106,8 +106,9 @@
       :is-open="modalOpen"
       :mode="modalMode"
       :entry="editing"
+      :error="modalOpen ? error : ''"
       @submit="onSubmit"
-      @close="modalOpen = false"
+      @close="closeModal"
     />
   </div>
 </template>
@@ -182,21 +183,28 @@ function signedAmount(row: LedgerEntry): string {
 }
 
 function openAdd() {
+  error.value = ''
   modalMode.value = 'add'
   editing.value = null
   modalOpen.value = true
 }
 
 function openRemit() {
+  error.value = ''
   modalMode.value = 'remit-owner'
   editing.value = null
   modalOpen.value = true
 }
 
 function openEdit(row: LedgerEntry) {
+  error.value = ''
   modalMode.value = 'edit'
   editing.value = row
   modalOpen.value = true
+}
+
+function closeModal() {
+  modalOpen.value = false
 }
 
 async function onSubmit(input: CreateLedgerEntryInput) {

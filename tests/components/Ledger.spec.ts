@@ -137,4 +137,25 @@ describe('Ledger.vue', () => {
     )
     app.unmount()
   })
+
+  it('shows save errors inside the modal and keeps remaining cards', async () => {
+    create.mockRejectedValueOnce(
+      new Error('Auditor cash remaining is ₱0.00. This would go negative.')
+    )
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    ;(el.querySelector('[data-testid="add-entry-btn"]') as HTMLButtonElement).click()
+    await nextTick()
+    const amount = document.querySelector('[data-testid="ledger-amount"]') as HTMLInputElement
+    amount.value = '1'
+    amount.dispatchEvent(new Event('input'))
+    ;(document.querySelector('[data-testid="ledger-submit"]') as HTMLButtonElement).click()
+    await nextTick()
+    await nextTick()
+    expect(document.querySelector('[data-testid="ledger-modal-error"]')?.textContent)
+      .toContain('would go negative')
+    expect(el.querySelector('[data-testid="auditor-remaining"]')?.textContent).toContain('3,000.00')
+    app.unmount()
+  })
 })

@@ -44,12 +44,12 @@ export const ledgerService = {
   async create(input: CreateLedgerEntryInput, existing: LedgerEntry[]): Promise<LedgerEntry[]> {
     assertOk(input, existing)
     const rows =
-      input.type === 'petty_issue'
+      input.type === 'fund_expense'
         ? (() => {
             const transferId = crypto.randomUUID()
             return [
               toInsertRow({ ...input, wallet: 'auditor_cash' }, transferId),
-              toInsertRow({ ...input, type: 'petty_issue', wallet: 'petty_cash' }, transferId)
+              toInsertRow({ ...input, type: 'fund_expense', wallet: 'expense' }, transferId)
             ]
           })()
         : [toInsertRow(input, null)]

@@ -93,4 +93,23 @@ describe('LedgerEntryModal', () => {
     expect(date.value).toBe(manilaYmd(new Date()))
     app.unmount()
   })
+
+  it('offers expense and GCash wallets and locks GCash remittance', async () => {
+    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const wallet = document.querySelector('[data-testid="ledger-wallet"]') as HTMLSelectElement
+    const walletValues = [...wallet.querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)
+    expect(walletValues).toEqual(['auditor_cash', 'expense', 'gcash'])
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    const typeValues = [...type.querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)
+    expect(typeValues).toContain('fund_expense')
+    expect(typeValues).toContain('gcash_remittance')
+    expect(typeValues).not.toContain('petty_issue')
+    type.value = 'gcash_remittance'
+    type.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(wallet.value).toBe('gcash')
+    expect(wallet.disabled).toBe(true)
+    app.unmount()
+  })
 })

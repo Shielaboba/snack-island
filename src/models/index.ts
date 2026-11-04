@@ -82,6 +82,17 @@ export type {
 // StoreSession
 export type { StoreSession } from './StoreSession';
 
+// Ledger
+export type {
+  LedgerWallet,
+  LedgerEntryType,
+  LedgerExpenseCategory,
+  LedgerEntry,
+  CreateLedgerEntryInput,
+  LedgerValidationResult
+} from './Ledger';
+export { LEDGER_TABLE, LEDGER_ENTRY_TYPES, LEDGER_EXPENSE_CATEGORIES } from './Ledger';
+
 // AuditIngredientMapping
 export type { AuditIngredientMapping } from './AuditIngredientMapping';
 

@@ -3,19 +3,54 @@ import {
   type CreateLedgerEntryInput,
   type LedgerEntry,
   type LedgerEntryType,
+  type LedgerTransferParty,
   type LedgerValidationResult,
   type LedgerWallet
 } from '../../models/Ledger'
 
 const emptyDeltas = () => ({ auditor_cash: 0, expense: 0, gcash: 0 })
 
-export function entryDelta(entry: Pick<LedgerEntry, 'type' | 'wallet' | 'amount'>): {
+export const LEDGER_PAGE_SIZE = 10
+
+export function ledgerPageCount(total: number, pageSize = LEDGER_PAGE_SIZE): number {
+  return Math.max(1, Math.ceil(Math.max(0, total) / pageSize))
+}
+
+export function paginateRows<T>(rows: T[], page: number, pageSize = LEDGER_PAGE_SIZE): T[] {
+  if (rows.length === 0) return []
+  const totalPages = ledgerPageCount(rows.length, pageSize)
+  const current = Math.min(Math.max(1, page), totalPages)
+  const start = (current - 1) * pageSize
+  return rows.slice(start, start + pageSize)
+}
+
+const TRANSFER_PARTIES: LedgerTransferParty[] = ['auditor_cash', 'gcash', 'owner']
+
+export function isTrackedTransferParty(
+  party: LedgerTransferParty | null | undefined
+): party is 'auditor_cash' | 'gcash' {
+  return party === 'auditor_cash' || party === 'gcash'
+}
+
+type DeltaEntry = Pick<LedgerEntry, 'type' | 'wallet' | 'amount'> &
+  Partial<Pick<LedgerEntry, 'transfer_from' | 'transfer_to'>>
+
+export function entryDelta(entry: DeltaEntry): {
   auditor_cash: number
   expense: number
   gcash: number
 } {
   const amount = entry.amount
   const zero = emptyDeltas()
+  if (entry.type === 'fund_transfer') {
+    if (isTrackedTransferParty(entry.transfer_from) && entry.wallet === entry.transfer_from) {
+      return { ...zero, [entry.transfer_from]: -amount }
+    }
+    if (isTrackedTransferParty(entry.transfer_to) && entry.wallet === entry.transfer_to) {
+      return { ...zero, [entry.transfer_to]: amount }
+    }
+    return zero
+  }
   if (entry.type === 'opening_cash' || entry.type === 'pos_remittance') {
     return { ...zero, auditor_cash: amount }
   }
@@ -166,13 +201,46 @@ export function cartRemittanceAmount(input: Pick<CreateLedgerEntryInput, 'total_
   return Number(input.total_sales ?? 0) + Number(input.petty_cash_returned ?? 0)
 }
 
-function proposedRows(input: CreateLedgerEntryInput): Array<Pick<LedgerEntry, 'type' | 'wallet' | 'amount'>> {
+export function fundTransferProposedRows(
+  input: CreateLedgerEntryInput
+): Array<Pick<LedgerEntry, 'type' | 'wallet' | 'amount' | 'transfer_from' | 'transfer_to'>> {
+  const from = input.transfer_from ?? null
+  const to = input.transfer_to ?? null
+  if (!from || !to) return []
+  const rows: Array<Pick<LedgerEntry, 'type' | 'wallet' | 'amount' | 'transfer_from' | 'transfer_to'>> = []
+  if (isTrackedTransferParty(from)) {
+    rows.push({
+      type: 'fund_transfer',
+      wallet: from,
+      amount: input.amount,
+      transfer_from: from,
+      transfer_to: to
+    })
+  }
+  if (isTrackedTransferParty(to)) {
+    rows.push({
+      type: 'fund_transfer',
+      wallet: to,
+      amount: input.amount,
+      transfer_from: from,
+      transfer_to: to
+    })
+  }
+  return rows
+}
+
+function proposedRows(
+  input: CreateLedgerEntryInput
+): Array<Pick<LedgerEntry, 'type' | 'wallet' | 'amount'> & Partial<Pick<LedgerEntry, 'transfer_from' | 'transfer_to'>>> {
   const amount = input.type === 'pos_remittance' ? cartRemittanceAmount(input) : input.amount
   if (input.type === 'fund_expense') {
     return [
       { type: 'fund_expense', wallet: 'auditor_cash', amount: input.amount },
       { type: 'fund_expense', wallet: 'expense', amount: input.amount }
     ]
+  }
+  if (input.type === 'fund_transfer') {
+    return fundTransferProposedRows(input)
   }
   return [{ type: input.type, wallet: input.wallet, amount }]
 }
@@ -198,6 +266,16 @@ export function validateEntry(
   }
   if (input.type === 'expense' && !input.category) {
     return { ok: false, message: 'Category is required for expenses.' }
+  }
+  if (input.type === 'fund_transfer') {
+    const from = input.transfer_from
+    const to = input.transfer_to
+    if (!from || !to || !TRANSFER_PARTIES.includes(from) || !TRANSFER_PARTIES.includes(to)) {
+      return { ok: false, message: 'Source and destination are required.' }
+    }
+    if (from === to) {
+      return { ok: false, message: 'Source and destination must be different.' }
+    }
   }
   const auditorOnly = ['opening_cash', 'pos_float', 'pos_remittance', 'owner_remittance']
   if (auditorOnly.includes(input.type) && input.wallet !== 'auditor_cash') {
@@ -226,6 +304,8 @@ export function validateEntry(
       category: input.category ?? null,
       note: null,
       transfer_id: null,
+      transfer_from: row.transfer_from ?? input.transfer_from ?? null,
+      transfer_to: row.transfer_to ?? input.transfer_to ?? null,
       total_sales: input.total_sales ?? null,
       petty_cash_returned: input.petty_cash_returned ?? null,
       created_by: null,
@@ -248,6 +328,7 @@ export function ledgerTypeLabel(type: LedgerEntryType): string {
     gcash_remittance: 'GCash remittance',
     owner_remittance: 'Remit to owner',
     fund_expense: 'Fund expense wallet',
+    fund_transfer: 'Fund Transfer Wallet',
     expense: 'Total Expense'
   }
   return labels[type]
@@ -260,4 +341,18 @@ export function ledgerWalletLabel(wallet: LedgerWallet): string {
     gcash: 'GCash'
   }
   return labels[wallet]
+}
+
+export function ledgerTransferPartyLabel(party: LedgerTransferParty): string {
+  const labels: Record<LedgerTransferParty, string> = {
+    auditor_cash: 'Auditor',
+    gcash: 'GCash',
+    owner: 'Owner'
+  }
+  return labels[party]
+}
+
+export function ledgerTransferRoute(row: Pick<LedgerEntry, 'transfer_from' | 'transfer_to'>): string | null {
+  if (!row.transfer_from || !row.transfer_to) return null
+  return `${ledgerTransferPartyLabel(row.transfer_from)} → ${ledgerTransferPartyLabel(row.transfer_to)}`
 }

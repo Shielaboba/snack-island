@@ -4,10 +4,22 @@ import {
   type CreateLedgerEntryInput,
   type LedgerEntry
 } from '../models/Ledger'
-import { cartRemittanceAmount, validateEntry, validateRemoval } from '../modules/ledger/ledgerUtils'
+import {
+  cartRemittanceAmount,
+  fundTransferProposedRows,
+  validateEntry,
+  validateRemoval
+} from '../modules/ledger/ledgerUtils'
 
-const SELECT_COLUMNS =
+const SELECT_COLUMNS_BASE =
   'id, entry_date, type, wallet, amount, category, note, transfer_id, total_sales, petty_cash_returned, created_by, created_at, updated_at'
+const SELECT_COLUMNS =
+  'id, entry_date, type, wallet, amount, category, note, transfer_id, transfer_from, transfer_to, total_sales, petty_cash_returned, created_by, created_at, updated_at'
+
+function isMissingTransferColumn(error: { message?: string } | null): boolean {
+  const message = error?.message ?? ''
+  return /transfer_from|transfer_to/i.test(message)
+}
 
 function assertOk(input: CreateLedgerEntryInput, existing: LedgerEntry[]) {
   const result = validateEntry(input, existing)
@@ -26,6 +38,8 @@ function toInsertRow(input: CreateLedgerEntryInput, transferId: string | null) {
     category: input.type === 'expense' ? input.category ?? null : null,
     note: input.note ?? null,
     transfer_id: transferId,
+    transfer_from: input.type === 'fund_transfer' ? input.transfer_from ?? null : null,
+    transfer_to: input.type === 'fund_transfer' ? input.transfer_to ?? null : null,
     total_sales: isCart ? Number(input.total_sales) : null,
     petty_cash_returned: isCart ? Number(input.petty_cash_returned) : null,
     created_by: input.created_by ?? null
@@ -34,14 +48,18 @@ function toInsertRow(input: CreateLedgerEntryInput, transferId: string | null) {
 
 export const ledgerService = {
   async list(): Promise<LedgerEntry[]> {
-    const { data, error } = await supabase
-      .from(LEDGER_TABLE)
-      .select(SELECT_COLUMNS)
-      .order('entry_date', { ascending: false })
-      .order('created_at', { ascending: false })
+    const query = (columns: string) =>
+      supabase
+        .from(LEDGER_TABLE)
+        .select(columns)
+        .order('entry_date', { ascending: false })
+        .order('created_at', { ascending: false })
 
-    if (error) throw error
-    return (data ?? []) as LedgerEntry[]
+    const first = await query(SELECT_COLUMNS)
+    const result =
+      first.error && isMissingTransferColumn(first.error) ? await query(SELECT_COLUMNS_BASE) : first
+    if (result.error) throw result.error
+    return (result.data ?? []) as LedgerEntry[]
   },
 
   async create(input: CreateLedgerEntryInput, existing: LedgerEntry[]): Promise<LedgerEntry[]> {
@@ -55,7 +73,23 @@ export const ledgerService = {
               toInsertRow({ ...input, type: 'fund_expense', wallet: 'expense' }, transferId)
             ]
           })()
-        : [toInsertRow(input, null)]
+        : input.type === 'fund_transfer'
+          ? (() => {
+              const proposed = fundTransferProposedRows(input)
+              const transferId = proposed.length === 2 ? crypto.randomUUID() : null
+              return proposed.map((row) =>
+                toInsertRow(
+                  {
+                    ...input,
+                    wallet: row.wallet,
+                    transfer_from: row.transfer_from,
+                    transfer_to: row.transfer_to
+                  },
+                  transferId
+                )
+              )
+            })()
+          : [toInsertRow(input, null)]
 
     const { data, error } = await supabase.from(LEDGER_TABLE).insert(rows).select(SELECT_COLUMNS)
     if (error) throw error
@@ -76,6 +110,8 @@ export const ledgerService = {
       amount: patch.amount ?? current.amount,
       category: patch.category !== undefined ? patch.category : current.category,
       note: patch.note !== undefined ? patch.note : current.note,
+      transfer_from: current.transfer_from ?? null,
+      transfer_to: current.transfer_to ?? null,
       total_sales: patch.total_sales !== undefined ? patch.total_sales : current.total_sales,
       petty_cash_returned:
         patch.petty_cash_returned !== undefined ? patch.petty_cash_returned : current.petty_cash_returned,

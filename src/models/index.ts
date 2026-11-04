@@ -85,13 +85,20 @@ export type { StoreSession } from './StoreSession';
 // Ledger
 export type {
   LedgerWallet,
+  LedgerTransferParty,
   LedgerEntryType,
   LedgerExpenseCategory,
   LedgerEntry,
   CreateLedgerEntryInput,
   LedgerValidationResult
 } from './Ledger';
-export { LEDGER_TABLE, LEDGER_WALLETS, LEDGER_ENTRY_TYPES, LEDGER_EXPENSE_CATEGORIES } from './Ledger';
+export {
+  LEDGER_TABLE,
+  LEDGER_WALLETS,
+  LEDGER_TRANSFER_PARTIES,
+  LEDGER_ENTRY_TYPES,
+  LEDGER_EXPENSE_CATEGORIES
+} from './Ledger';
 
 // AuditIngredientMapping
 export type { AuditIngredientMapping } from './AuditIngredientMapping';

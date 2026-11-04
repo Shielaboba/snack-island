@@ -59,7 +59,7 @@ export const ledgerService = {
     const result =
       first.error && isMissingTransferColumn(first.error) ? await query(SELECT_COLUMNS_BASE) : first
     if (result.error) throw result.error
-    return (result.data ?? []) as LedgerEntry[]
+    return (result.data ?? []) as unknown as LedgerEntry[]
   },
 
   async create(input: CreateLedgerEntryInput, existing: LedgerEntry[]): Promise<LedgerEntry[]> {

@@ -1,11 +1,20 @@
-import { describe, it, expect } from 'vitest'
+/** @vitest-environment happy-dom */
+import { describe, it, expect, vi } from 'vitest'
 import { createApp } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import Sidebar from '../../src/components/Sidebar.vue'
+
+vi.mock('../../src/assets/logo.png', () => ({ default: 'logo.png' }))
 
 describe('Sidebar collapse toggle', () => {
   it('toggles collapsed class when clicking the menu button', async () => {
     const container = document.createElement('div')
     const app = createApp(Sidebar)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }]
+    })
+    app.use(router)
     app.mount(container)
 
     const sidebar = container.querySelector('.sidebar') as HTMLElement

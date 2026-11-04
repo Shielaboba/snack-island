@@ -90,6 +90,12 @@ const routes = [
     name: 'Audit',
     component: () => import('../components/AuditPage.vue'),
     meta: { requiresAuth: true, allowedRoles: [0, 2] } // Admin and Auditor
+  },
+  {
+    path: '/ledger',
+    name: 'Ledger',
+    component: () => import('../components/Ledger.vue'),
+    meta: { requiresAuth: true, allowedRoles: [0, 2] }
   }
 ]
 

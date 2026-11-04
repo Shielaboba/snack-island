@@ -4,8 +4,13 @@ import {
   dailyRemaining,
   entriesInDateRange,
   entryDelta,
+  LEDGER_PAGE_SIZE,
+  ledgerPageCount,
+  ledgerTransferPartyLabel,
+  ledgerTransferRoute,
   ledgerTypeLabel,
   ledgerWalletLabel,
+  paginateRows,
   manilaWeekWindow,
   manilaYmd,
   validateEntry,
@@ -24,6 +29,8 @@ function row(partial: Partial<LedgerEntry> & Pick<LedgerEntry, 'type' | 'wallet'
     category: partial.category ?? null,
     note: partial.note ?? null,
     transfer_id: partial.transfer_id ?? null,
+    transfer_from: partial.transfer_from ?? null,
+    transfer_to: partial.transfer_to ?? null,
     total_sales: partial.total_sales ?? null,
     petty_cash_returned: partial.petty_cash_returned ?? null,
     created_by: partial.created_by ?? 'auditor',
@@ -61,6 +68,45 @@ describe('entryDelta', () => {
       .toEqual({ ...empty, auditor_cash: -500 })
     expect(entryDelta({ type: 'fund_expense', wallet: 'expense', amount: 500 }))
       .toEqual({ ...empty, expense: 500 })
+  })
+
+  it('moves fund_transfer from source to destination; Owner is not a remaining wallet', () => {
+    expect(
+      entryDelta({
+        type: 'fund_transfer',
+        wallet: 'auditor_cash',
+        amount: 200,
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash'
+      })
+    ).toEqual({ ...empty, auditor_cash: -200 })
+    expect(
+      entryDelta({
+        type: 'fund_transfer',
+        wallet: 'gcash',
+        amount: 200,
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash'
+      })
+    ).toEqual({ ...empty, gcash: 200 })
+    expect(
+      entryDelta({
+        type: 'fund_transfer',
+        wallet: 'auditor_cash',
+        amount: 150,
+        transfer_from: 'auditor_cash',
+        transfer_to: 'owner'
+      })
+    ).toEqual({ ...empty, auditor_cash: -150 })
+    expect(
+      entryDelta({
+        type: 'fund_transfer',
+        wallet: 'gcash',
+        amount: 80,
+        transfer_from: 'owner',
+        transfer_to: 'gcash'
+      })
+    ).toEqual({ ...empty, gcash: 80 })
   })
 
   it('debits only the chosen wallet for an expense', () => {
@@ -150,6 +196,48 @@ describe('validateEntry', () => {
       { entry_date: '2026-09-21', type: 'expense', wallet: 'auditor_cash', amount: 10 },
       seeded
     ).ok).toBe(false)
+  })
+
+  it('validates fund_transfer source, destination, and funds', () => {
+    expect(
+      validateEntry(
+        {
+          entry_date: '2026-09-21',
+          type: 'fund_transfer',
+          wallet: 'auditor_cash',
+          amount: 200,
+          transfer_from: 'auditor_cash',
+          transfer_to: 'gcash'
+        },
+        seeded
+      )
+    ).toEqual({ ok: true })
+    expect(
+      validateEntry(
+        {
+          entry_date: '2026-09-21',
+          type: 'fund_transfer',
+          wallet: 'auditor_cash',
+          amount: 200,
+          transfer_from: 'auditor_cash',
+          transfer_to: 'auditor_cash'
+        },
+        seeded
+      ).ok
+    ).toBe(false)
+    expect(
+      validateEntry(
+        {
+          entry_date: '2026-09-21',
+          type: 'fund_transfer',
+          wallet: 'auditor_cash',
+          amount: 1001,
+          transfer_from: 'auditor_cash',
+          transfer_to: 'owner'
+        },
+        seeded
+      ).ok
+    ).toBe(false)
   })
 
   it('validates fund_expense against auditor cash covering the transfer', () => {
@@ -252,6 +340,22 @@ describe('weekSummary and filters', () => {
   })
 })
 
+describe('ledger table pagination', () => {
+  it('pages 10 rows at a time and clamps out-of-range pages', () => {
+    const ids = Array.from({ length: 23 }, (_, i) => `r${i + 1}`)
+    expect(LEDGER_PAGE_SIZE).toBe(10)
+    expect(ledgerPageCount(23)).toBe(3)
+    expect(paginateRows(ids, 1)).toEqual(ids.slice(0, 10))
+    expect(paginateRows(ids, 2)).toEqual(ids.slice(10, 20))
+    expect(paginateRows(ids, 3)).toEqual(ids.slice(20, 23))
+    expect(paginateRows(ids, 9)).toEqual(ids.slice(20, 23))
+    expect(paginateRows(ids, 0)).toEqual(ids.slice(0, 10))
+    expect(ledgerPageCount(0)).toBe(1)
+    expect(ledgerPageCount(10)).toBe(1)
+    expect(ledgerPageCount(11)).toBe(2)
+  })
+})
+
 describe('ledgerTypeLabel and ledgerWalletLabel', () => {
   it('returns the human labels', () => {
     expect(ledgerTypeLabel('opening_cash')).toBe('Starting cash')
@@ -260,10 +364,16 @@ describe('ledgerTypeLabel and ledgerWalletLabel', () => {
     expect(ledgerTypeLabel('gcash_remittance')).toBe('GCash remittance')
     expect(ledgerTypeLabel('owner_remittance')).toBe('Remit to owner')
     expect(ledgerTypeLabel('fund_expense')).toBe('Fund expense wallet')
+    expect(ledgerTypeLabel('fund_transfer')).toBe('Fund Transfer Wallet')
     expect(ledgerTypeLabel('expense')).toBe('Total Expense')
     expect(ledgerWalletLabel('auditor_cash')).toBe('Auditor cash')
     expect(ledgerWalletLabel('expense')).toBe('Expense wallet')
     expect(ledgerWalletLabel('gcash')).toBe('GCash')
+    expect(ledgerTransferPartyLabel('auditor_cash')).toBe('Auditor')
+    expect(ledgerTransferPartyLabel('gcash')).toBe('GCash')
+    expect(ledgerTransferPartyLabel('owner')).toBe('Owner')
+    expect(ledgerTransferRoute({ transfer_from: 'auditor_cash', transfer_to: 'gcash' }))
+      .toBe('Auditor → GCash')
   })
 })
 

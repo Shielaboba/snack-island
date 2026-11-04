@@ -54,6 +54,26 @@ describe('ledgerService.list', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('orders')
     expect(supabase.from).not.toHaveBeenCalledWith('expenses')
   })
+
+  it('retries without transfer columns when they are missing', async () => {
+    const failOrder2 = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'column ledger_entries.transfer_from does not exist' }
+    })
+    const failOrder1 = vi.fn().mockReturnValue({ order: failOrder2 })
+    const failSelect = vi.fn().mockReturnValue({ order: failOrder1 })
+    const okOrder2 = vi.fn().mockResolvedValue({ data: [opening], error: null })
+    const okOrder1 = vi.fn().mockReturnValue({ order: okOrder2 })
+    const okSelect = vi.fn().mockReturnValue({ order: okOrder1 })
+    vi.mocked(supabase.from)
+      .mockReturnValueOnce({ select: failSelect } as any)
+      .mockReturnValueOnce({ select: okSelect } as any)
+
+    const rows = await ledgerService.list()
+    expect(rows).toEqual([opening])
+    expect(failSelect.mock.calls[0][0]).toContain('transfer_from')
+    expect(okSelect.mock.calls[0][0]).not.toContain('transfer_from')
+  })
 })
 
 describe('ledgerService.create', () => {
@@ -106,6 +126,60 @@ describe('ledgerService.create', () => {
     expect(payload[0].transfer_id).toBe(payload[1].transfer_id)
     expect(payload.map((row) => row.wallet).sort()).toEqual(['auditor_cash', 'expense'])
     expect(payload.every((row) => row.type === 'fund_expense')).toBe(true)
+  })
+
+  it('inserts two fund_transfer rows between Auditor and GCash', async () => {
+    const mockSelect = vi.fn().mockResolvedValue({ data: [], error: null })
+    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
+    vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
+
+    await ledgerService.create(
+      {
+        entry_date: '2026-09-21',
+        type: 'fund_transfer',
+        wallet: 'auditor_cash',
+        amount: 200,
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash'
+      },
+      [opening]
+    )
+    const payload = mockInsert.mock.calls[0][0] as Array<{
+      wallet: string
+      type: string
+      transfer_from: string
+      transfer_to: string
+      transfer_id: string | null
+    }>
+    expect(payload).toHaveLength(2)
+    expect(payload.map((row) => row.wallet).sort()).toEqual(['auditor_cash', 'gcash'])
+    expect(payload.every((row) => row.type === 'fund_transfer')).toBe(true)
+    expect(payload.every((row) => row.transfer_from === 'auditor_cash')).toBe(true)
+    expect(payload.every((row) => row.transfer_to === 'gcash')).toBe(true)
+    expect(payload[0].transfer_id).toBe(payload[1].transfer_id)
+  })
+
+  it('inserts one fund_transfer row when Owner is the destination', async () => {
+    const mockSelect = vi.fn().mockResolvedValue({ data: [], error: null })
+    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
+    vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
+
+    await ledgerService.create(
+      {
+        entry_date: '2026-09-21',
+        type: 'fund_transfer',
+        wallet: 'auditor_cash',
+        amount: 150,
+        transfer_from: 'auditor_cash',
+        transfer_to: 'owner'
+      },
+      [opening]
+    )
+    const payload = mockInsert.mock.calls[0][0] as Array<{ wallet: string; transfer_to: string }>
+    expect(payload).toHaveLength(1)
+    expect(payload[0]).toEqual(
+      expect.objectContaining({ wallet: 'auditor_cash', transfer_from: 'auditor_cash', transfer_to: 'owner' })
+    )
   })
 
   it('inserts cart cash remittance with total sales, petty cash returned, and summed amount', async () => {

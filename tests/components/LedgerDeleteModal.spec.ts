@@ -55,6 +55,26 @@ describe('LedgerDeleteModal', () => {
     app.unmount()
   })
 
+  it('explains that a two-wallet fund transfer delete removes both rows', async () => {
+    const { app } = mountModal({
+      isOpen: true,
+      entry: {
+        ...entry,
+        type: 'fund_transfer',
+        transfer_id: 't2',
+        amount: 200,
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash'
+      },
+      deleting: false,
+      error: ''
+    })
+    await nextTick()
+    expect(document.querySelector('[data-testid="ledger-delete-modal"]')?.textContent)
+      .toContain('matching transfer')
+    app.unmount()
+  })
+
   it('explains that a fund expense delete removes both wallet rows', async () => {
     const { app } = mountModal({
       isOpen: true,

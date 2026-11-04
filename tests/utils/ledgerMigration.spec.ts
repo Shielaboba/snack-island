@@ -48,6 +48,22 @@ describe('ledger cart cash remittance migration', () => {
   })
 })
 
+const transferSql = readFileSync(
+  resolve(process.cwd(), 'migrations/migration_ledger_fund_transfer.sql'),
+  'utf8'
+)
+
+describe('ledger fund transfer migration', () => {
+  it('adds fund_transfer and source/destination without touching other tables', () => {
+    expect(transferSql).toMatch(/fund_transfer/)
+    expect(transferSql).toMatch(/transfer_from/)
+    expect(transferSql).toMatch(/transfer_to/)
+    expect(transferSql).toMatch(/ALTER TABLE ledger_entries/)
+    expect(transferSql).not.toMatch(/ALTER TABLE\s+(orders|expenses|store_sessions|order_items|inventory)/i)
+    expect(transferSql).not.toMatch(/DROP TABLE/i)
+  })
+})
+
 describe('ledger wallet follow-up migration', () => {
   it('remaps petty cash to expense wallet without touching other tables', () => {
     expect(walletSql).toMatch(/fund_expense/)

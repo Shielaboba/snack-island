@@ -1,5 +1,8 @@
 export type LedgerWallet = 'auditor_cash' | 'expense' | 'gcash'
 
+/** Transfer endpoints for Fund Transfer Wallet. Expense wallet is not allowed. */
+export type LedgerTransferParty = 'auditor_cash' | 'gcash' | 'owner'
+
 export type LedgerEntryType =
   | 'opening_cash'
   | 'pos_float'
@@ -7,6 +10,7 @@ export type LedgerEntryType =
   | 'gcash_remittance'
   | 'owner_remittance'
   | 'fund_expense'
+  | 'fund_transfer'
   | 'expense'
 
 export type LedgerExpenseCategory =
@@ -24,6 +28,8 @@ export const LEDGER_TABLE = 'ledger_entries'
 
 export const LEDGER_WALLETS: LedgerWallet[] = ['auditor_cash', 'expense', 'gcash']
 
+export const LEDGER_TRANSFER_PARTIES: LedgerTransferParty[] = ['auditor_cash', 'gcash', 'owner']
+
 export const LEDGER_ENTRY_TYPES: LedgerEntryType[] = [
   'opening_cash',
   'pos_float',
@@ -31,6 +37,7 @@ export const LEDGER_ENTRY_TYPES: LedgerEntryType[] = [
   'gcash_remittance',
   'owner_remittance',
   'fund_expense',
+  'fund_transfer',
   'expense'
 ]
 
@@ -55,6 +62,8 @@ export interface LedgerEntry {
   category: LedgerExpenseCategory | null
   note: string | null
   transfer_id: string | null
+  transfer_from?: LedgerTransferParty | null
+  transfer_to?: LedgerTransferParty | null
   total_sales?: number | null
   petty_cash_returned?: number | null
   created_by: string | null
@@ -69,6 +78,8 @@ export interface CreateLedgerEntryInput {
   amount: number
   category?: LedgerExpenseCategory | null
   note?: string | null
+  transfer_from?: LedgerTransferParty | null
+  transfer_to?: LedgerTransferParty | null
   total_sales?: number | null
   petty_cash_returned?: number | null
   created_by?: string | null

@@ -30,7 +30,7 @@ This is **not** a general chart of accounts, **not** auto-posted from Orders, an
 - Remaining balances are **calculated** from entered lines. v1 has no separate physical-count or variance field.
 - Funding the expense wallet is a **transfer**: auditor cash down, expense wallet up.
 - Leftover **auditor cash + expense wallet + GCash** after a partial owner remit is next week’s float.
-- We do **not** track the owner’s wallet — only the outflow from auditor cash.
+- We do **not** track an Owner remaining card. Owner can still be a **Fund Transfer Wallet** source or destination; only Auditor and GCash remaining change.
 - The existing **Expenses** page and `expenses` table stay as they are. Ledger is a separate cash book.
 - Currency is PHP. Calendar is **Asia/Manila**. A “week” is **Monday 00:00 through Sunday 23:59** Manila time.
 
@@ -87,6 +87,7 @@ Route: `/ledger`
 | `gcash_remittance` | `gcash` | GCash **up** |
 | `owner_remittance` | `auditor_cash` | Auditor cash **down** by the amount she chooses (partial is valid) |
 | `fund_expense` | both | Auditor cash **down**, expense wallet **up** (same amount, shared `transfer_id`) |
+| `fund_transfer` | tracked party | Move amount from **source** to **destination**. Parties: Auditor, GCash, Owner. Not Expense. |
 | `expense` | `auditor_cash`, `expense`, or `gcash` | Chosen wallet **down**. Requires `category`. |
 
 Without `opening_cash`, the first “cash to POS” would make auditor cash negative and be blocked. After week 1, leftover remaining is next week’s float — no new opening is required unless more cash is added from outside the POS.
@@ -115,6 +116,12 @@ expense delta:
 gcash delta:
   gcash_remittance   +amount
   expense            -amount   (if wallet is gcash)
+  fund_transfer      -amount   (if this row’s wallet is the source)
+  fund_transfer      +amount   (if this row’s wallet is the destination)
+
+fund_transfer also:
+  auditor_cash       -amount when source is Auditor; +amount when destination is Auditor
+  Owner is not a remaining wallet — a transfer to Owner only debits the tracked source; a transfer from Owner only credits the tracked destination.
 ```
 
 ### Balances
@@ -142,14 +149,16 @@ New table `ledger_entries` in Supabase. No change to `orders`, `expenses`, or `s
 | `amount` | numeric NOT NULL | `> 0` |
 | `category` | text | Required when `type = expense`; NULL otherwise |
 | `note` | text | Optional |
-| `transfer_id` | uuid | Required for both rows of a `fund_expense`; NULL otherwise |
+| `transfer_id` | uuid | Required for both rows of a `fund_expense` and for Auditor↔GCash `fund_transfer`; NULL when Owner is a party |
+| `transfer_from` | text | `auditor_cash` \| `gcash` \| `owner` for `fund_transfer`; NULL otherwise |
+| `transfer_to` | text | `auditor_cash` \| `gcash` \| `owner` for `fund_transfer`; NULL otherwise |
 | `created_by` | text | Username or user id of the actor |
 | `created_at` | timestamptz | Default `now()` |
 | `updated_at` | timestamptz | Default `now()` |
 
 Constraints:
 
-- `type` check: the seven allowed values
+- `type` check: the eight allowed values
 - `wallet` check: the three allowed values
 - `amount > 0`
 - `expense` ⇒ `category` is not null
@@ -171,6 +180,15 @@ Creating a fund-expense transfer inserts **two rows** with the same `transfer_id
 2. `wallet = expense`
 
 Editing amount/date/note of one side updates **both** rows. Deleting one side deletes **both**.
+
+### Fund-transfer write rule
+
+Creating a **Fund Transfer Wallet** entry uses source, destination, and amount. Parties are Auditor (`auditor_cash`), GCash (`gcash`), and Owner (`owner`). Expense wallet is not allowed.
+
+- Auditor ↔ GCash: insert **two rows** with the same `transfer_id`, `transfer_from`, `transfer_to`, and amount. `wallet` is the tracked party on that row (source debit, destination credit).
+- Owner as source or destination: insert **one row** on the tracked wallet (`auditor_cash` or `gcash`), `transfer_id` null.
+
+The table shows one collapsed line as `Auditor → GCash` (or Owner).
 
 ### Insufficient funds
 
@@ -209,9 +227,9 @@ Follow the Expenses page patterns (header, filters, table, primary button, modal
 
 - **Header:** “Ledger” + short subtitle (“Auditor cash, expense wallet, and GCash”).
 - **Cards:** Auditor cash remaining, Expense wallet remaining, GCash remaining.
-- **Week strip:** In from POS, Expenses out, Remitted to owner, Remaining (both wallets).
+- **Week strip:** This week’s In from POS, Expenses out, and Remitted to owner as metric cards (Manila Mon–Sun).
 - **Filters:** start date, end date, wallet, type. Default range: current Manila week.
-- **Table:** date, type (human label), category, wallet, signed amount (in vs out), note, actions (edit/delete).
+- **Table:** date, type (human label), category, wallet, signed amount (in vs out), note, actions (edit/delete icon buttons). Paginated 10 rows per page with numbered page tabs. Alternating row colors.
 - **Actions:** Add entry, Remit to owner.
 - Empty state when there are no lines: explain the first useful action (issue float to POS or record a remittance).
 
@@ -223,6 +241,7 @@ Human labels:
 - `gcash_remittance` → “GCash remittance”
 - `owner_remittance` → “Remit to owner”
 - `fund_expense` → “Fund expense wallet”
+- `fund_transfer` → “Fund Transfer Wallet” (fields: Source, Destination, Amount)
 - `expense` → “Total Expense”
 
 ## 9. Error handling

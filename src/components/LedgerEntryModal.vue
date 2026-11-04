@@ -39,8 +39,37 @@
             </div>
           </div>
 
-          <div class="form-grid">
+          <div v-if="isFundTransfer" class="form-grid">
             <div class="form-section">
+              <label class="form-label">Source <span class="required">*</span></label>
+              <select
+                v-model="form.transfer_from"
+                class="form-select"
+                data-testid="ledger-transfer-from"
+                :disabled="typeLocked"
+              >
+                <option v-for="party in LEDGER_TRANSFER_PARTIES" :key="party" :value="party">
+                  {{ ledgerTransferPartyLabel(party) }}
+                </option>
+              </select>
+            </div>
+            <div class="form-section">
+              <label class="form-label">Destination <span class="required">*</span></label>
+              <select
+                v-model="form.transfer_to"
+                class="form-select"
+                data-testid="ledger-transfer-to"
+                :disabled="typeLocked"
+              >
+                <option v-for="party in LEDGER_TRANSFER_PARTIES" :key="party" :value="party">
+                  {{ ledgerTransferPartyLabel(party) }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div v-if="!isFundTransfer" class="form-section">
               <label class="form-label">Wallet</label>
               <select
                 v-model="form.wallet"
@@ -132,13 +161,21 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   LEDGER_ENTRY_TYPES,
   LEDGER_EXPENSE_CATEGORIES,
+  LEDGER_TRANSFER_PARTIES,
   LEDGER_WALLETS,
   type CreateLedgerEntryInput,
   type LedgerEntry,
   type LedgerEntryType,
+  type LedgerTransferParty,
   type LedgerWallet
 } from '../models/Ledger'
-import { ledgerTypeLabel, ledgerWalletLabel, manilaYmd } from '../modules/ledger/ledgerUtils'
+import {
+  isTrackedTransferParty,
+  ledgerTransferPartyLabel,
+  ledgerTypeLabel,
+  ledgerWalletLabel,
+  manilaYmd
+} from '../modules/ledger/ledgerUtils'
 
 const props = defineProps<{
   isOpen: boolean
@@ -163,7 +200,9 @@ const form = reactive<CreateLedgerEntryInput>({
   wallet: 'auditor_cash',
   amount: 0,
   category: null,
-  note: ''
+  note: '',
+  transfer_from: 'auditor_cash',
+  transfer_to: 'gcash'
 })
 
 const auditorLockedTypes: LedgerEntryType[] = [
@@ -185,6 +224,8 @@ watch(
       form.amount = 0
       form.category = null
       form.note = ''
+      form.transfer_from = 'auditor_cash'
+      form.transfer_to = 'gcash'
       amountText.value = ''
       totalSalesText.value = ''
       pettyReturnedText.value = ''
@@ -197,6 +238,8 @@ watch(
       form.amount = props.entry.amount
       form.category = props.entry.category
       form.note = props.entry.note ?? ''
+      form.transfer_from = props.entry.transfer_from ?? 'auditor_cash'
+      form.transfer_to = props.entry.transfer_to ?? 'gcash'
       amountText.value = String(props.entry.amount)
       if (props.entry.type === 'pos_remittance') {
         totalSalesText.value =
@@ -217,6 +260,8 @@ watch(
     form.amount = 0
     form.category = null
     form.note = ''
+    form.transfer_from = 'auditor_cash'
+    form.transfer_to = 'gcash'
     amountText.value = ''
     totalSalesText.value = ''
     pettyReturnedText.value = ''
@@ -230,12 +275,17 @@ watch(
     if (auditorLockedTypes.includes(type)) form.wallet = 'auditor_cash'
     if (type === 'gcash_remittance') form.wallet = 'gcash'
     if (type === 'expense' && props.mode === 'add') form.wallet = 'expense'
+    if (type === 'fund_transfer') {
+      form.transfer_from = form.transfer_from || 'auditor_cash'
+      form.transfer_to = form.transfer_to && form.transfer_to !== form.transfer_from ? form.transfer_to : 'gcash'
+    }
     if (type !== 'expense') form.category = null
   }
 )
 
 const showCategory = computed(() => form.type === 'expense')
 const isCartRemittance = computed(() => form.type === 'pos_remittance')
+const isFundTransfer = computed(() => form.type === 'fund_transfer')
 const walletLocked = computed(
   () =>
     auditorLockedTypes.includes(form.type) ||
@@ -259,19 +309,28 @@ function onCategoryChange(event: Event) {
   form.category = (value || null) as CreateLedgerEntryInput['category']
 }
 
+function transferWallet(): LedgerWallet {
+  if (isTrackedTransferParty(form.transfer_from)) return form.transfer_from
+  if (isTrackedTransferParty(form.transfer_to)) return form.transfer_to
+  return 'auditor_cash'
+}
+
 function onSubmit() {
   if (props.saving) return
   const totalSales = isCartRemittance.value ? Number(totalSalesText.value) : null
   const pettyReturned = isCartRemittance.value ? Number(pettyReturnedText.value) : null
+  const isTransfer = form.type === 'fund_transfer'
   emit('submit', {
     entry_date: form.entry_date,
     type: form.type,
-    wallet: form.wallet as LedgerWallet,
+    wallet: isTransfer ? transferWallet() : (form.wallet as LedgerWallet),
     amount: isCartRemittance.value
       ? Number(totalSales) + Number(pettyReturned)
       : Number(amountText.value),
     category: form.type === 'expense' ? form.category : null,
     note: form.note || null,
+    transfer_from: isTransfer ? (form.transfer_from as LedgerTransferParty) : null,
+    transfer_to: isTransfer ? (form.transfer_to as LedgerTransferParty) : null,
     total_sales: totalSales,
     petty_cash_returned: pettyReturned
   })
@@ -353,6 +412,8 @@ function onSubmit() {
   border-radius: 8px;
   font-size: 0.95rem;
   box-sizing: border-box;
+  color: #212529;
+  color-scheme: light;
 }
 .modal-footer {
   display: flex;

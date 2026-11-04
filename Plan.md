@@ -146,8 +146,9 @@ Typical flow:
 3. Auditor funds the expense wallet from auditor cash when needed (auditor cash down, expense wallet up).
 4. GCash remittances go into the GCash wallet. Expenses can be paid from **auditor cash**, **expense wallet**, or **GCash**.
 5. Weekly, the auditor remits a **chosen amount** to the owner — not the full remaining — so leftover auditor cash, expense wallet, and GCash can run the next week.
+6. **Fund Transfer Wallet** moves cash among **Auditor**, **GCash**, and **Owner**. Source, destination, and amount. Expense wallet is not a party. Owner is an endpoint only — there is no Owner remaining card.
 
-Remaining balances are calculated from the lines entered. See `docs/superpowers/specs/2026-09-25-ledger-design.md`.
+Remaining balances are calculated from the lines entered. This week’s movement (In from POS, Expenses out, Remitted to owner) is shown as metric cards. The entry table is paginated **10 rows per page**, with alternating row colors and icon edit/delete actions. See `docs/superpowers/specs/2026-09-25-ledger-design.md`.
 
 ---
 
@@ -262,14 +263,16 @@ Manual cash-control lines for the Ledger page. Not tied to `orders` or `expenses
 |---------|------|-------------|
 | id | uuid | Primary key |
 | entry_date | date | Calendar date of the event (Asia/Manila) |
-| type | text | `opening_cash`, `pos_float`, `pos_remittance`, `gcash_remittance`, `owner_remittance`, `fund_expense`, `expense` |
+| type | text | `opening_cash`, `pos_float`, `pos_remittance`, `gcash_remittance`, `owner_remittance`, `fund_expense`, `fund_transfer`, `expense` |
 | wallet | text | `auditor_cash`, `expense`, or `gcash` |
 | amount | numeric | Always positive; sign comes from type + wallet. For cart remittance this is Total Sales + Petty Cash Returned |
 | total_sales | numeric | Required for `pos_remittance`; NULL otherwise |
 | petty_cash_returned | numeric | Required for `pos_remittance`; NULL otherwise |
 | category | text | Required for expenses (Labor, Utilities, …); NULL otherwise |
 | note | text | Optional |
-| transfer_id | uuid | Links the two rows of a fund-expense transfer |
+| transfer_id | uuid | Links the two rows of a fund-expense or Auditor↔GCash fund transfer |
+| transfer_from | text | `auditor_cash`, `gcash`, or `owner` for `fund_transfer`; NULL otherwise |
+| transfer_to | text | `auditor_cash`, `gcash`, or `owner` for `fund_transfer`; NULL otherwise |
 | created_by | text | Who entered the line |
 | created_at | timestamptz | Created |
 | updated_at | timestamptz | Updated |

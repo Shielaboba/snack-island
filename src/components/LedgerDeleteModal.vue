@@ -21,7 +21,7 @@
             <strong>{{ ledgerTypeLabel(entry.type) }}</strong>
             of ₱{{ formatCurrency(entry.amount) }}?
           </p>
-          <p v-if="entry.type === 'fund_expense'" class="transfer-note">
+          <p v-if="entry.type === 'fund_expense' || (entry.type === 'fund_transfer' && entry.transfer_id)" class="transfer-note">
             This also deletes the matching transfer on the other wallet.
           </p>
           <p class="warning-text">This action cannot be undone.</p>

@@ -197,6 +197,7 @@ describe('LedgerEntryModal', () => {
     const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
     const typeValues = [...type.querySelectorAll('option')].map((o) => (o as HTMLOptionElement).value)
     expect(typeValues).toContain('fund_expense')
+    expect(typeValues).toContain('fund_transfer')
     expect(typeValues).toContain('gcash_remittance')
     expect(typeValues).not.toContain('petty_issue')
     type.value = 'gcash_remittance'
@@ -204,6 +205,40 @@ describe('LedgerEntryModal', () => {
     await nextTick()
     expect(wallet.value).toBe('gcash')
     expect(wallet.disabled).toBe(true)
+    app.unmount()
+  })
+
+  it('shows source and destination wallets for Fund Transfer Wallet', async () => {
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    const option = [...type.querySelectorAll('option')].find((o) => o.value === 'fund_transfer')
+    expect(option?.textContent).toBe('Fund Transfer Wallet')
+    type.value = 'fund_transfer'
+    type.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(document.querySelector('[data-testid="ledger-wallet"]')).toBeNull()
+    const source = document.querySelector('[data-testid="ledger-transfer-from"]') as HTMLSelectElement
+    const dest = document.querySelector('[data-testid="ledger-transfer-to"]') as HTMLSelectElement
+    expect([...source.options].map((o) => o.value)).toEqual(['auditor_cash', 'gcash', 'owner'])
+    expect([...dest.options].map((o) => o.value)).toEqual(['auditor_cash', 'gcash', 'owner'])
+    expect(source.value).toBe('auditor_cash')
+    dest.value = 'gcash'
+    dest.dispatchEvent(new Event('change'))
+    const amount = document.querySelector('[data-testid="ledger-amount"]') as HTMLInputElement
+    amount.value = '250'
+    amount.dispatchEvent(new Event('input'))
+    await nextTick()
+    ;(document.querySelector('[data-testid="ledger-submit"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(getSubmitted()).toEqual(
+      expect.objectContaining({
+        type: 'fund_transfer',
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash',
+        amount: 250
+      })
+    )
     app.unmount()
   })
 })

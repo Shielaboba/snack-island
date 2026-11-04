@@ -90,6 +90,33 @@ describe('Ledger.vue', () => {
     app.unmount()
   })
 
+  it('shows this-week movement as labeled metric cards', async () => {
+    const today = manilaYmd(new Date())
+    list.mockResolvedValueOnce([
+      { ...entries[1], id: 'w-pos', entry_date: today, amount: 7636 },
+      {
+        ...entries[0],
+        id: 'w-exp',
+        entry_date: today,
+        type: 'expense',
+        amount: 7951,
+        category: 'Labor'
+      }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    const strip = el.querySelector('[data-testid="week-strip"]')
+    expect(strip?.textContent).toContain('This week')
+    expect(el.querySelector('[data-testid="week-pos-card"]')?.textContent).toContain('In from POS')
+    expect(el.querySelector('[data-testid="week-expense-card"]')?.textContent).toContain('Expenses out')
+    expect(el.querySelector('[data-testid="week-owner-card"]')?.textContent).toContain('Remitted to owner')
+    expect(el.querySelector('[data-testid="week-pos-in"]')?.textContent).toContain('7,636.00')
+    expect(el.querySelector('[data-testid="week-expenses"]')?.textContent).toContain('7,951.00')
+    expect(el.querySelector('[data-testid="week-owner"]')?.textContent).toContain('0.00')
+    app.unmount()
+  })
+
   it('clicking a wallet card filters the table to that wallet', async () => {
     const { el, app } = mountPage()
     await nextTick()
@@ -205,6 +232,107 @@ describe('Ledger.vue', () => {
     expect(create).toHaveBeenCalledTimes(1)
     resolveCreate()
     await nextTick()
+    app.unmount()
+  })
+
+  it('collapses a Fund Transfer Wallet pair into Auditor → GCash', async () => {
+    const today = manilaYmd(new Date())
+    list.mockResolvedValueOnce([
+      {
+        ...entries[0],
+        id: 'ft-a',
+        entry_date: today,
+        type: 'fund_transfer',
+        wallet: 'auditor_cash',
+        amount: 200,
+        transfer_id: 'ft-1',
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash'
+      },
+      {
+        ...entries[0],
+        id: 'ft-g',
+        entry_date: today,
+        type: 'fund_transfer',
+        wallet: 'gcash',
+        amount: 200,
+        transfer_id: 'ft-1',
+        transfer_from: 'auditor_cash',
+        transfer_to: 'gcash'
+      }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    const rows = [...el.querySelectorAll('.table-row')]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.textContent).toContain('Fund Transfer Wallet')
+    expect(rows[0]?.textContent).toContain('Auditor → GCash')
+    app.unmount()
+  })
+
+  it('paginates the table 10 rows per page with zebra rows', async () => {
+    const today = manilaYmd(new Date())
+    list.mockResolvedValueOnce(
+      Array.from({ length: 12 }, (_, i) => ({
+        ...entries[0],
+        id: `page-${i + 1}`,
+        entry_date: today,
+        note: `row ${i + 1}`
+      }))
+    )
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    const rows = () => [...el.querySelectorAll('.table-row')]
+    expect(rows()).toHaveLength(10)
+    expect(rows()[0]?.textContent).toContain('row 1')
+    expect(rows()[9]?.textContent).toContain('row 10')
+    expect(rows()[0]?.classList.contains('table-row-alt')).toBe(false)
+    expect(rows()[1]?.classList.contains('table-row-alt')).toBe(true)
+    expect(el.querySelector('[data-testid="ledger-pagination"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="ledger-page-1"]')?.classList.contains('active')).toBe(true)
+    ;(el.querySelector('[data-testid="ledger-page-2"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(rows()).toHaveLength(2)
+    expect(rows()[0]?.textContent).toContain('row 11')
+    expect(rows()[1]?.textContent).toContain('row 12')
+    expect(rows()[0]?.classList.contains('table-row-alt')).toBe(false)
+    expect(rows()[1]?.classList.contains('table-row-alt')).toBe(true)
+    ;(el.querySelector('[data-testid="ledger-page-prev"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(rows()).toHaveLength(10)
+    expect(rows()[0]?.textContent).toContain('row 1')
+    app.unmount()
+  })
+
+  it('hides pagination when there are 10 or fewer visible rows', async () => {
+    list.mockResolvedValueOnce([
+      { ...entries[0], id: 'only', entry_date: manilaYmd(new Date()) }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    expect(el.querySelectorAll('.table-row')).toHaveLength(1)
+    expect(el.querySelector('[data-testid="ledger-pagination"]')).toBeNull()
+    app.unmount()
+  })
+
+  it('uses icon buttons for edit and delete', async () => {
+    list.mockResolvedValueOnce([
+      { ...entries[0], id: 'icon-1', entry_date: manilaYmd(new Date()) }
+    ])
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    const edit = el.querySelector('[data-testid="edit-entry-btn"]') as HTMLButtonElement
+    const del = el.querySelector('[data-testid="delete-entry-btn"]') as HTMLButtonElement
+    expect(edit.getAttribute('aria-label')).toBe('Edit')
+    expect(del.getAttribute('aria-label')).toBe('Delete')
+    expect(edit.querySelector('svg')).not.toBeNull()
+    expect(del.querySelector('svg')).not.toBeNull()
+    expect(edit.textContent?.replace(/\s+/g, '')).toBe('')
+    expect(del.textContent?.replace(/\s+/g, '')).toBe('')
     app.unmount()
   })
 

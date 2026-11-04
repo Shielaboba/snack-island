@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-text">
         <h1>Attendance</h1>
-        <p>Approve or decline without changing punch time. OT is hours past 8 on that session.</p>
+        <p>Approve or decline without changing punch time. OT is recorded only if staff request it (minimum 2 hours).</p>
       </div>
       <button class="btn-primary" type="button" data-testid="add-missed-btn" @click="openAdd">
         Add missed punch
@@ -33,7 +33,10 @@
             <td>{{ formatManilaDateTime(row.clock_in_at) }}</td>
             <td>{{ row.clock_out_at ? formatManilaDateTime(row.clock_out_at) : '—' }}</td>
             <td>{{ formatHours(shiftHours(row)) }}</td>
-            <td :data-testid="`ot-${row.id}`">{{ formatHours(row.clock_out_at ? overtimeHours(row) : null) }}</td>
+            <td :data-testid="`ot-${row.id}`">
+              {{ formatHours(recordedOvertimeHours(row)) }}
+              <div v-if="row.ot_status" class="muted">OT {{ punchStatusLabel(row.ot_status) }}</div>
+            </td>
             <td>
               <button
                 v-if="row.clock_in_photo_path"
@@ -95,6 +98,24 @@
                     @click="setStatus(row.id, 'out', 'declined')"
                   >
                     Decline out
+                  </button>
+                  <button
+                    v-if="row.ot_status === 'pending'"
+                    class="mini approve"
+                    type="button"
+                    :data-testid="`approve-ot-${row.id}`"
+                    @click="setOt(row.id, 'approved')"
+                  >
+                    Approve OT
+                  </button>
+                  <button
+                    v-if="row.ot_status === 'pending'"
+                    class="mini decline"
+                    type="button"
+                    :data-testid="`decline-ot-${row.id}`"
+                    @click="setOt(row.id, 'declined')"
+                  >
+                    Decline OT
                   </button>
                 </div>
               </div>
@@ -159,8 +180,8 @@ import {
   errorMessage,
   formatHours,
   formatManilaDateTime,
-  overtimeHours,
   punchStatusLabel,
+  recordedOvertimeHours,
   shiftHours
 } from '../modules/staffClock/staffClockUtils'
 import ClockPhotoModal from './ClockPhotoModal.vue'
@@ -238,6 +259,16 @@ async function setStatus(id: string, side: 'in' | 'out', status: PunchStatus) {
     await load()
   } catch (err) {
     error.value = errorMessage(err, 'Could not update status.')
+  }
+}
+
+async function setOt(id: string, status: PunchStatus) {
+  error.value = ''
+  try {
+    await staffClockService.setOtStatus(id, status, actor())
+    await load()
+  } catch (err) {
+    error.value = errorMessage(err, 'Could not update OT.')
   }
 }
 

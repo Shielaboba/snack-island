@@ -153,7 +153,7 @@ Remaining balances are calculated from the lines entered. See `docs/superpowers/
 
 ### ⏱️ H. Staff clock
 
-Shai and Den share one staff login. They pick a name, take a compressed selfie, and clock in or out. Time starts at capture. Admin and auditor approve or decline on Attendance without changing the punch time. OT is hours past 8 on that person’s in→out session (can cross midnight). See `docs/superpowers/specs/2026-11-04-staff-clock-design.md`.
+Shai and Den share one staff login. They pick a name, take a compressed selfie, and clock in or out. Time starts at capture. Admin and auditor approve or decline on Attendance without changing the punch time. OT is recorded only if staff request it (minimum 2 hours past 8); time keeps running while OT is pending. See `docs/superpowers/specs/2026-11-04-staff-clock-design.md`.
 
 ---
 
@@ -291,6 +291,9 @@ One row per Shai/Den session. Photos in Supabase Storage bucket `staff-clock-pho
 | clock_out_status | text | `pending`, `approved`, `declined`, or NULL |
 | clock_in_override | boolean | Typed by admin/auditor |
 | clock_out_override | boolean | Typed by admin/auditor |
+| ot_requested | boolean | Staff tapped Request OT |
+| ot_status | text | `pending`, `approved`, `declined`, or NULL |
+| ot_requested_at | timestamptz | When they requested OT |
 | created_by | text | Who created the row |
 | updated_by | text | Who last changed it |
 | created_at | timestamptz | Created |

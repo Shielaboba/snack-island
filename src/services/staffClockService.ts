@@ -13,14 +13,31 @@ import {
   openShiftFor,
   validateClockIn,
   validateClockOut,
+  validateRequestOt,
   validateShiftTimes
 } from '../modules/staffClock/staffClockUtils'
 
 const SELECT_COLUMNS =
+  'id, staff_name, clock_in_at, clock_out_at, clock_in_photo_path, clock_out_photo_path, clock_in_status, clock_out_status, clock_in_override, clock_out_override, created_by, updated_by, created_at, updated_at, ot_requested, ot_status, ot_requested_at'
+
+const SELECT_COLUMNS_BASE =
   'id, staff_name, clock_in_at, clock_out_at, clock_in_photo_path, clock_out_photo_path, clock_in_status, clock_out_status, clock_in_override, clock_out_override, created_by, updated_by, created_at, updated_at'
 
 function throwIfError(error: { message: string } | null) {
   if (error) throw new Error(error.message)
+}
+
+function asShift(row: StaffClockShift): StaffClockShift {
+  return {
+    ...row,
+    ot_requested: Boolean(row.ot_requested),
+    ot_status: row.ot_status ?? null,
+    ot_requested_at: row.ot_requested_at ?? null
+  }
+}
+
+function missingOtColumn(error: { message?: string } | null) {
+  return Boolean(error?.message?.includes('ot_requested') || error?.message?.includes('ot_status'))
 }
 
 async function uploadPhoto(path: string, blob: Blob) {
@@ -40,14 +57,20 @@ function photoPaths(shift: StaffClockShift): string[] {
 
 export const staffClockService = {
   async list(): Promise<StaffClockShift[]> {
-    const { data, error } = await supabase
-      .from(STAFF_CLOCK_TABLE)
-      .select(SELECT_COLUMNS)
-      .order('clock_in_at', { ascending: false })
-      .order('created_at', { ascending: false })
-
+    const query = () =>
+      supabase.from(STAFF_CLOCK_TABLE).select(SELECT_COLUMNS).order('clock_in_at', { ascending: false })
+    let { data, error } = await query().order('created_at', { ascending: false })
+    if (missingOtColumn(error)) {
+      const fallback = await supabase
+        .from(STAFF_CLOCK_TABLE)
+        .select(SELECT_COLUMNS_BASE)
+        .order('clock_in_at', { ascending: false })
+        .order('created_at', { ascending: false })
+      data = fallback.data
+      error = fallback.error
+    }
     throwIfError(error)
-    return (data ?? []) as StaffClockShift[]
+    return ((data ?? []) as StaffClockShift[]).map(asShift)
   },
 
   photoUrl(path: string | null): string {
@@ -84,11 +107,11 @@ export const staffClockService = {
         created_by: actor,
         updated_by: actor
       })
-      .select(SELECT_COLUMNS)
+      .select(SELECT_COLUMNS_BASE)
     throwIfError(error)
     const row = (data ?? [])[0] as StaffClockShift | undefined
     if (!row) throw new Error('Clock-in did not save.')
-    return row
+    return asShift(row)
   },
 
   async clockOut(
@@ -119,6 +142,50 @@ export const staffClockService = {
     throwIfError(error)
     const row = (data ?? [])[0] as StaffClockShift | undefined
     if (!row) throw new Error('Clock-out did not save.')
+    return row
+  },
+
+  async requestOt(
+    staffName: StaffName,
+    existing: StaffClockShift[],
+    actor: string,
+    now: Date = new Date()
+  ): Promise<StaffClockShift> {
+    const check = validateRequestOt(staffName, existing, now)
+    if (!check.ok) throw new Error(check.message)
+    const open = openShiftFor(staffName, existing)
+    if (!open) throw new Error(`${staffName} is not clocked in.`)
+    const at = now.toISOString()
+    const { data, error } = await supabase
+      .from(STAFF_CLOCK_TABLE)
+      .update({
+        ot_requested: true,
+        ot_status: 'pending',
+        ot_requested_at: at,
+        updated_by: actor,
+        updated_at: at
+      })
+      .eq('id', open.id)
+      .select(SELECT_COLUMNS)
+    throwIfError(error)
+    const row = (data ?? [])[0] as StaffClockShift | undefined
+    if (!row) throw new Error('OT request did not save.')
+    return row
+  },
+
+  async setOtStatus(id: string, status: PunchStatus, actor: string): Promise<StaffClockShift> {
+    const { data, error } = await supabase
+      .from(STAFF_CLOCK_TABLE)
+      .update({
+        ot_status: status,
+        updated_by: actor,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(SELECT_COLUMNS)
+    throwIfError(error)
+    const row = (data ?? [])[0] as StaffClockShift | undefined
+    if (!row) throw new Error('Could not update OT status.')
     return row
   },
 

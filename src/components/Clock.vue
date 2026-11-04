@@ -29,6 +29,7 @@
         <div class="live-time" data-testid="clock-live-time">{{ liveTime }}</div>
         <div class="elapsed">{{ elapsedCopy }}</div>
         <div class="status-note" data-testid="clock-status">{{ statusCopy }}</div>
+        <div v-if="otCopy" class="status-note" data-testid="clock-ot-status">{{ otCopy }}</div>
       </div>
 
       <div v-if="capturing" class="camera-panel">
@@ -67,6 +68,16 @@
       Clock in
     </button>
     <button
+      v-if="!capturing && showRequestOt"
+      class="btn-secondary action-btn"
+      type="button"
+      data-testid="request-ot-btn"
+      :disabled="saving"
+      @click="requestOt"
+    >
+      Request OT
+    </button>
+    <button
       v-if="!capturing && action === 'clock_out'"
       class="btn-primary action-btn"
       type="button"
@@ -87,12 +98,14 @@ import { authService } from '../services/authService'
 import { staffClockService } from '../services/staffClockService'
 import { captureVideoFrame } from '../modules/staffClock/compressSelfie'
 import {
+  canRequestOt,
   clockStatusCopy,
   errorMessage,
   formatManilaLive,
   isOpenShift,
   latestShiftFor,
-  nextClockAction
+  nextClockAction,
+  otStatusCopy
 } from '../modules/staffClock/staffClockUtils'
 
 const staffName = ref<StaffName>('Shai')
@@ -112,6 +125,10 @@ const actor = () => authService.getCurrentUser()?.username ?? 'staff'
 const relevantShift = computed(() => latestShiftFor(staffName.value, shifts.value))
 const action = computed(() => nextClockAction(staffName.value, shifts.value))
 const statusCopy = computed(() => clockStatusCopy(relevantShift.value))
+const otCopy = computed(() => otStatusCopy(relevantShift.value))
+const showRequestOt = computed(
+  () => action.value === 'clock_out' && canRequestOt(relevantShift.value)
+)
 const elapsedCopy = computed(() => {
   const shift = relevantShift.value
   if (!shift || !isOpenShift(shift)) return 'Not on the clock'
@@ -166,6 +183,22 @@ async function startCapture(mode: 'in' | 'out') {
 function cancelCapture() {
   capturing.value = false
   stopCamera()
+}
+
+async function requestOt() {
+  if (saving.value) return
+  saving.value = true
+  error.value = ''
+  try {
+    const updated = await staffClockService.requestOt(staffName.value, shifts.value, actor())
+    shifts.value = shifts.value.map((row) => (row.id === updated.id ? updated : row))
+    if (!shifts.value.some((row) => row.id === updated.id)) shifts.value = [updated, ...shifts.value]
+    await load()
+  } catch (err) {
+    error.value = errorMessage(err, 'Could not request OT.')
+  } finally {
+    saving.value = false
+  }
 }
 
 async function capture() {
@@ -280,7 +313,7 @@ onUnmounted(() => {
   min-height: 180px;
   object-fit: cover;
 }
-.action-btn { width: 100%; }
+.action-btn { width: 100%; margin-top: 8px; }
 .btn-primary,
 .btn-secondary {
   padding: 14px 24px;

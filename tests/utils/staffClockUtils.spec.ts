@@ -13,7 +13,10 @@ import {
   isOpenShift,
   nextClockAction,
   openShiftFor,
+  MIN_OT_HOURS,
+  canRequestOt,
   overtimeHours,
+  recordedOvertimeHours,
   selfieTargetSize,
   shiftHours,
   toManilaDateTimeLocal,
@@ -34,6 +37,9 @@ function shift(partial: Partial<StaffClockShift>): StaffClockShift {
     clock_out_status: null,
     clock_in_override: false,
     clock_out_override: false,
+    ot_requested: false,
+    ot_status: null,
+    ot_requested_at: null,
     created_by: 'staff',
     updated_by: null,
     created_at: '2026-11-04T06:00:00.000Z',
@@ -135,17 +141,50 @@ describe('hours and overtime', () => {
     expect(overtimeHours(row)).toBe(0)
   })
 
-  it('OT is hours past 8 on that in-to-out', () => {
+  it('does not record OT unless staff requested it', () => {
     const row = shift({
       clock_in_at: '2026-11-04T06:00:00.000Z',
-      clock_out_at: '2026-11-04T15:00:00.000Z',
+      clock_out_at: '2026-11-04T16:00:00.000Z',
       clock_out_status: 'approved'
     })
-    expect(shiftHours(row)).toBe(9)
-    expect(overtimeHours(row)).toBe(1)
+    expect(shiftHours(row)).toBe(10)
+    expect(overtimeHours(row)).toBe(0)
+    expect(recordedOvertimeHours(row)).toBeNull()
   })
 
-  it('OT is 0 for an 8-hour shift and while still open', () => {
+  it('records OT past 8 once requested, even while still pending', () => {
+    const row = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T16:00:00.000Z',
+      clock_out_status: 'approved',
+      ot_requested: true,
+      ot_status: 'pending'
+    })
+    expect(overtimeHours(row)).toBe(2)
+    expect(recordedOvertimeHours(row)).toBe(2)
+  })
+
+  it('does not record OT under the 2-hour minimum or when declined', () => {
+    expect(MIN_OT_HOURS).toBe(2)
+    const short = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T15:00:00.000Z',
+      clock_out_status: 'approved',
+      ot_requested: true,
+      ot_status: 'pending'
+    })
+    expect(shiftHours(short)).toBe(9)
+    expect(recordedOvertimeHours(short)).toBeNull()
+    const declined = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T16:00:00.000Z',
+      ot_requested: true,
+      ot_status: 'declined'
+    })
+    expect(recordedOvertimeHours(declined)).toBeNull()
+  })
+
+  it('OT is 0 for an 8-hour shift and while still open without a request', () => {
     const eight = shift({
       clock_in_at: '2026-11-04T06:00:00.000Z',
       clock_out_at: '2026-11-04T14:00:00.000Z',
@@ -154,6 +193,34 @@ describe('hours and overtime', () => {
     expect(overtimeHours(eight)).toBe(0)
     expect(overtimeHours(shift({}))).toBe(0)
     expect(shiftHours(shift({}))).toBeNull()
+  })
+
+  it('lets staff request OT only after 2 hours past 8, and time still counts as open', () => {
+    const now = new Date('2026-11-04T16:00:00.000Z')
+    const open = shift({ clock_in_at: '2026-11-04T06:00:00.000Z' })
+    expect(canRequestOt(open, now)).toBe(true)
+    expect(isOpenShift(open)).toBe(true)
+    expect(canRequestOt(open, new Date('2026-11-04T14:30:00.000Z'))).toBe(false)
+    expect(
+      canRequestOt(
+        shift({
+          clock_in_at: '2026-11-04T06:00:00.000Z',
+          ot_requested: true,
+          ot_status: 'pending'
+        }),
+        now
+      )
+    ).toBe(false)
+    expect(
+      canRequestOt(
+        shift({
+          clock_in_at: '2026-11-04T06:00:00.000Z',
+          ot_requested: true,
+          ot_status: 'declined'
+        }),
+        now
+      )
+    ).toBe(true)
   })
 
   it('formats hours for the attendance table', () => {

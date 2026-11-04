@@ -11,7 +11,8 @@ export const SELFIE_MAX_SIDE = 720
 export const SELFIE_JPEG_QUALITY = 0.7
 
 const HOUR_MS = 60 * 60 * 1000
-const STANDARD_HOURS = 8
+export const STANDARD_SHIFT_HOURS = 8
+export const MIN_OT_HOURS = 2
 
 export function isOpenShift(shift: StaffClockShift): boolean {
   if (shift.clock_in_status === 'declined') return false
@@ -78,12 +79,70 @@ export function shiftHours(shift: Pick<StaffClockShift, 'clock_in_at' | 'clock_o
   return Math.round(hours * 100) / 100
 }
 
-export function overtimeHours(
-  shift: Pick<StaffClockShift, 'clock_in_at' | 'clock_out_at'>
+export function elapsedHours(
+  shift: Pick<StaffClockShift, 'clock_in_at' | 'clock_out_at' | 'clock_out_status'>,
+  now: Date = new Date()
 ): number {
-  const hours = shiftHours(shift)
-  if (hours == null) return 0
-  return Math.max(0, Math.round((hours - STANDARD_HOURS) * 100) / 100)
+  const end =
+    shift.clock_out_at && shift.clock_out_status !== 'declined'
+      ? Date.parse(shift.clock_out_at)
+      : now.getTime()
+  return Math.round(((end - Date.parse(shift.clock_in_at)) / HOUR_MS) * 100) / 100
+}
+
+export function rawOvertimeHours(
+  shift: Pick<StaffClockShift, 'clock_in_at' | 'clock_out_at' | 'clock_out_status'>,
+  now: Date = new Date()
+): number {
+  return Math.max(0, Math.round((elapsedHours(shift, now) - STANDARD_SHIFT_HOURS) * 100) / 100)
+}
+
+export function overtimeHours(shift: StaffClockShift, now: Date = new Date()): number {
+  if (!shift.ot_requested || shift.ot_status === 'declined' || !shift.ot_status) return 0
+  const raw = rawOvertimeHours(shift, now)
+  if (raw < MIN_OT_HOURS) return 0
+  return raw
+}
+
+export function recordedOvertimeHours(
+  shift: StaffClockShift,
+  now: Date = new Date()
+): number | null {
+  const hours = overtimeHours(shift, now)
+  return hours > 0 ? hours : null
+}
+
+export function canRequestOt(
+  shift: StaffClockShift | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!shift || !isOpenShift(shift)) return false
+  if (shift.ot_status === 'pending' || shift.ot_status === 'approved') return false
+  return rawOvertimeHours(shift, now) >= MIN_OT_HOURS
+}
+
+export function validateRequestOt(
+  name: StaffName,
+  shifts: StaffClockShift[],
+  now: Date = new Date()
+): ClockValidationResult {
+  const open = openShiftFor(name, shifts)
+  if (!open) return { ok: false, message: `${name} is not clocked in.` }
+  if (open.ot_status === 'pending' || open.ot_status === 'approved') {
+    return { ok: false, message: `${name} already requested OT.` }
+  }
+  if (rawOvertimeHours(open, now) < MIN_OT_HOURS) {
+    return { ok: false, message: 'OT is at least 2 hours. Request after 10 hours on the clock.' }
+  }
+  return { ok: true }
+}
+
+export function otStatusCopy(shift: StaffClockShift | null): string | null {
+  if (!shift) return null
+  if (shift.ot_status === 'pending') return 'OT requested · waiting for approval'
+  if (shift.ot_status === 'approved') return 'OT approved · time still running'
+  if (shift.ot_status === 'declined') return 'OT declined · you can request again'
+  return null
 }
 
 export function formatHours(hours: number | null): string {

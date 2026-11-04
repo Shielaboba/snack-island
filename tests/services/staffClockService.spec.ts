@@ -30,6 +30,9 @@ const openShai: StaffClockShift = {
   clock_out_status: null,
   clock_in_override: false,
   clock_out_override: false,
+  ot_requested: false,
+  ot_status: null,
+  ot_requested_at: null,
   created_by: 'staff',
   updated_by: null,
   created_at: '2026-11-04T06:00:00.000Z',
@@ -227,6 +230,52 @@ describe('staffClockService approvals and overrides', () => {
         clock_in_photo_path: null,
         clock_out_photo_path: null
       })
+    )
+  })
+
+  it('staff OT request is pending and does not clock them out', async () => {
+    const tenHourOpen = {
+      ...openShai,
+      clock_in_at: '2026-11-04T06:00:00.000Z'
+    }
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: [{ ...tenHourOpen, ot_requested: true, ot_status: 'pending' }],
+      error: null
+    })
+    const mockEq = vi.fn().mockReturnValue({ select: mockSelect })
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq })
+    vi.mocked(supabase.from).mockReturnValue({ update: mockUpdate } as any)
+
+    await staffClockService.requestOt('Shai', [tenHourOpen], 'staff', new Date('2026-11-04T16:00:00.000Z'))
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ot_requested: true,
+        ot_status: 'pending'
+      })
+    )
+    expect(mockUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ clock_out_at: expect.anything() })
+    )
+  })
+
+  it('sets OT status without changing punch times', async () => {
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: [{ ...openShai, ot_status: 'approved' }],
+      error: null
+    })
+    const mockEq = vi.fn().mockReturnValue({ select: mockSelect })
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq })
+    vi.mocked(supabase.from).mockReturnValue({ update: mockUpdate } as any)
+
+    await staffClockService.setOtStatus(openShai.id, 'approved', 'ana')
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ot_status: 'approved',
+        updated_by: 'ana'
+      })
+    )
+    expect(mockUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ clock_in_at: expect.anything() })
     )
   })
 })

@@ -41,3 +41,20 @@ describe('staff_clock_shifts migration is additive', () => {
     expect(sql).toMatch(/storage\.buckets/i)
   })
 })
+
+const otSql = readFileSync(
+  resolve(process.cwd(), 'migrations/migration_staff_clock_ot_request.sql'),
+  'utf8'
+)
+
+describe('staff clock OT request migration is additive', () => {
+  it('adds OT request columns without dropping or rewriting the table', () => {
+    expect(otSql).toMatch(/ALTER TABLE staff_clock_shifts/i)
+    expect(otSql).toMatch(/ot_requested/)
+    expect(otSql).toMatch(/ot_status/)
+    expect(otSql).toMatch(/ot_requested_at/)
+    expect(otSql).not.toMatch(/DROP TABLE/i)
+    expect(otSql).not.toMatch(/CREATE TABLE/i)
+    expect(otSql).not.toMatch(/ALTER TABLE\s+(orders|expenses|store_sessions|ledger_entries)/i)
+  })
+})

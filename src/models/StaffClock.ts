@@ -18,6 +18,9 @@ export interface StaffClockShift {
   clock_out_status: PunchStatus | null
   clock_in_override: boolean
   clock_out_override: boolean
+  ot_requested: boolean
+  ot_status: PunchStatus | null
+  ot_requested_at: string | null
   created_by: string | null
   updated_by: string | null
   created_at: string

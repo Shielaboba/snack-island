@@ -84,6 +84,17 @@
             <span class="nav-active-indicator"></span>
           </router-link>
         </li>
+
+        <li v-if="isAdminOrAuditor" class="nav-item">
+          <router-link to="/ledger" class="nav-link" @click="closeMobileSidebar">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+            <span class="nav-text">Ledger</span>
+            <span class="nav-active-indicator"></span>
+          </router-link>
+        </li>
         
         <li v-if="isAdmin" class="nav-item">
           <router-link to="/discounts" class="nav-link" @click="closeMobileSidebar">

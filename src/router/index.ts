@@ -96,6 +96,18 @@ const routes = [
     name: 'Ledger',
     component: () => import('../components/Ledger.vue'),
     meta: { requiresAuth: true, allowedRoles: [0, 2] }
+  },
+  {
+    path: '/clock',
+    name: 'Clock',
+    component: () => import('../components/Clock.vue'),
+    meta: { requiresAuth: true, allowedRoles: [1] }
+  },
+  {
+    path: '/attendance',
+    name: 'Attendance',
+    component: () => import('../components/Attendance.vue'),
+    meta: { requiresAuth: true, allowedRoles: [0, 2] }
   }
 ]
 

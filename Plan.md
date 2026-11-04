@@ -42,6 +42,8 @@ Create a POS that works locally (on tablet or laptop), tracks daily sales and in
 | **Inventory** | Manages solid and liquid ingredients |
 | **Expenses** | Records operational costs |
 | **Ledger** | Auditor cash book: POS float, EOD petty cash remittance, expense wallet, GCash, weekly owner remit |
+| **Clock** | Staff clock in/out with selfie (Shai / Den on the shared staff login) |
+| **Attendance** | Admin/auditor punch list, photo review, approve/decline, OT past 8 hours |
 | **Reports** | Exports daily CSV summaries |
 | **Dashboard** | Visual insights and real-time analytics |
 
@@ -146,6 +148,12 @@ Typical flow:
 5. Weekly, the auditor remits a **chosen amount** to the owner — not the full remaining — so leftover auditor cash, expense wallet, and GCash can run the next week.
 
 Remaining balances are calculated from the lines entered. See `docs/superpowers/specs/2026-09-25-ledger-design.md`.
+
+---
+
+### ⏱️ H. Staff clock
+
+Shai and Den share one staff login. They pick a name, take a compressed selfie, and clock in or out. Time starts at capture. Admin and auditor approve or decline on Attendance without changing the punch time. OT is hours past 8 on that person’s in→out session (can cross midnight). See `docs/superpowers/specs/2026-11-04-staff-clock-design.md`.
 
 ---
 
@@ -263,6 +271,28 @@ Manual cash-control lines for the Ledger page. Not tied to `orders` or `expenses
 | note | text | Optional |
 | transfer_id | uuid | Links the two rows of a fund-expense transfer |
 | created_by | text | Who entered the line |
+| created_at | timestamptz | Created |
+| updated_at | timestamptz | Updated |
+
+---
+
+#### `staff_clock_shifts`
+One row per Shai/Den session. Photos in Supabase Storage bucket `staff-clock-photos`.
+
+| Column | Type | Description |
+|---------|------|-------------|
+| id | uuid | Primary key |
+| staff_name | text | `Shai` or `Den` |
+| clock_in_at | timestamptz | Capture or typed in time |
+| clock_out_at | timestamptz | Capture or typed out time. NULL = still open |
+| clock_in_photo_path | text | Storage path. NULL if override |
+| clock_out_photo_path | text | Storage path. NULL if override |
+| clock_in_status | text | `pending`, `approved`, `declined` |
+| clock_out_status | text | `pending`, `approved`, `declined`, or NULL |
+| clock_in_override | boolean | Typed by admin/auditor |
+| clock_out_override | boolean | Typed by admin/auditor |
+| created_by | text | Who created the row |
+| updated_by | text | Who last changed it |
 | created_at | timestamptz | Created |
 | updated_at | timestamptz | Updated |
 

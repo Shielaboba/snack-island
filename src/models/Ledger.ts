@@ -55,6 +55,8 @@ export interface LedgerEntry {
   category: LedgerExpenseCategory | null
   note: string | null
   transfer_id: string | null
+  total_sales?: number | null
+  petty_cash_returned?: number | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -67,6 +69,8 @@ export interface CreateLedgerEntryInput {
   amount: number
   category?: LedgerExpenseCategory | null
   note?: string | null
+  total_sales?: number | null
+  petty_cash_returned?: number | null
   created_by?: string | null
 }
 

@@ -162,21 +162,38 @@ function formatPeso(value: number): string {
   return `₱${value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
 }
 
+export function cartRemittanceAmount(input: Pick<CreateLedgerEntryInput, 'total_sales' | 'petty_cash_returned'>): number {
+  return Number(input.total_sales ?? 0) + Number(input.petty_cash_returned ?? 0)
+}
+
 function proposedRows(input: CreateLedgerEntryInput): Array<Pick<LedgerEntry, 'type' | 'wallet' | 'amount'>> {
+  const amount = input.type === 'pos_remittance' ? cartRemittanceAmount(input) : input.amount
   if (input.type === 'fund_expense') {
     return [
       { type: 'fund_expense', wallet: 'auditor_cash', amount: input.amount },
       { type: 'fund_expense', wallet: 'expense', amount: input.amount }
     ]
   }
-  return [{ type: input.type, wallet: input.wallet, amount: input.amount }]
+  return [{ type: input.type, wallet: input.wallet, amount }]
 }
 
 export function validateEntry(
   input: CreateLedgerEntryInput,
   existing: LedgerEntry[]
 ): LedgerValidationResult {
-  if (!(input.amount > 0)) {
+  if (input.type === 'pos_remittance') {
+    const sales = input.total_sales
+    const petty = input.petty_cash_returned
+    if (sales == null || petty == null || Number.isNaN(Number(sales)) || Number.isNaN(Number(petty))) {
+      return { ok: false, message: 'Total Sales and Petty Cash Returned are required.' }
+    }
+    if (Number(sales) < 0 || Number(petty) < 0) {
+      return { ok: false, message: 'Total Sales and Petty Cash Returned cannot be negative.' }
+    }
+    if (!(cartRemittanceAmount(input) > 0)) {
+      return { ok: false, message: 'Cart cash remittance must be greater than 0.' }
+    }
+  } else if (!(input.amount > 0)) {
     return { ok: false, message: 'Amount must be greater than 0.' }
   }
   if (input.type === 'expense' && !input.category) {
@@ -209,6 +226,8 @@ export function validateEntry(
       category: input.category ?? null,
       note: null,
       transfer_id: null,
+      total_sales: input.total_sales ?? null,
+      petty_cash_returned: input.petty_cash_returned ?? null,
       created_by: null,
       created_at: '',
       updated_at: ''
@@ -225,7 +244,7 @@ export function ledgerTypeLabel(type: LedgerEntryType): string {
   const labels: Record<LedgerEntryType, string> = {
     opening_cash: 'Starting cash',
     pos_float: 'Cash to POS',
-    pos_remittance: 'Petty cash remittance (EOD)',
+    pos_remittance: 'Cart Cash Remittance',
     gcash_remittance: 'GCash remittance',
     owner_remittance: 'Remit to owner',
     fund_expense: 'Fund expense wallet',

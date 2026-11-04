@@ -1,33 +1,43 @@
-import type {
-  CreateLedgerEntryInput,
-  LedgerEntry,
-  LedgerEntryType,
-  LedgerValidationResult,
-  LedgerWallet
+import {
+  LEDGER_WALLETS,
+  type CreateLedgerEntryInput,
+  type LedgerEntry,
+  type LedgerEntryType,
+  type LedgerValidationResult,
+  type LedgerWallet
 } from '../../models/Ledger'
+
+const emptyDeltas = () => ({ auditor_cash: 0, expense: 0, gcash: 0 })
 
 export function entryDelta(entry: Pick<LedgerEntry, 'type' | 'wallet' | 'amount'>): {
   auditor_cash: number
-  petty_cash: number
+  expense: number
+  gcash: number
 } {
   const amount = entry.amount
-  const zero = { auditor_cash: 0, petty_cash: 0 }
+  const zero = emptyDeltas()
   if (entry.type === 'opening_cash' || entry.type === 'pos_remittance') {
     return { ...zero, auditor_cash: amount }
+  }
+  if (entry.type === 'gcash_remittance') {
+    return { ...zero, gcash: amount }
   }
   if (
     entry.type === 'pos_float' ||
     entry.type === 'owner_remittance' ||
     (entry.type === 'expense' && entry.wallet === 'auditor_cash') ||
-    (entry.type === 'petty_issue' && entry.wallet === 'auditor_cash')
+    (entry.type === 'fund_expense' && entry.wallet === 'auditor_cash')
   ) {
     return { ...zero, auditor_cash: -amount }
   }
-  if (entry.type === 'petty_issue' && entry.wallet === 'petty_cash') {
-    return { ...zero, petty_cash: amount }
+  if (entry.type === 'fund_expense' && entry.wallet === 'expense') {
+    return { ...zero, expense: amount }
   }
-  if (entry.type === 'expense' && entry.wallet === 'petty_cash') {
-    return { ...zero, petty_cash: -amount }
+  if (entry.type === 'expense' && entry.wallet === 'expense') {
+    return { ...zero, expense: -amount }
+  }
+  if (entry.type === 'expense' && entry.wallet === 'gcash') {
+    return { ...zero, gcash: -amount }
   }
   return zero
 }
@@ -49,16 +59,16 @@ export type NegativeDay = { wallet: LedgerWallet; date: string; balance: number 
 /** First date where a wallet's end-of-day running balance drops below zero. */
 export function firstNegativeDay(entries: LedgerEntry[]): NegativeDay | null {
   const sorted = [...entries].sort((a, b) => a.entry_date.localeCompare(b.entry_date))
-  const wallets: LedgerWallet[] = ['auditor_cash', 'petty_cash']
-  const balance = { auditor_cash: 0, petty_cash: 0 }
+  const balance = emptyDeltas()
   for (let i = 0; i < sorted.length; i++) {
     const entry = sorted[i]!
     const delta = entryDelta(entry)
-    balance.auditor_cash += delta.auditor_cash
-    balance.petty_cash += delta.petty_cash
+    for (const wallet of LEDGER_WALLETS) {
+      balance[wallet] += delta[wallet]
+    }
     const endOfDay = sorted[i + 1]?.entry_date !== entry.entry_date
     if (!endOfDay) continue
-    for (const wallet of wallets) {
+    for (const wallet of LEDGER_WALLETS) {
       // Round to centavos so float noise (0.1 + 0.2 - 0.3) is not read as negative.
       if (Math.round(balance[wallet] * 100) < 0) {
         return { wallet, date: entry.entry_date, balance: balance[wallet] }
@@ -68,12 +78,8 @@ export function firstNegativeDay(entries: LedgerEntry[]): NegativeDay | null {
   return null
 }
 
-function walletLabel(wallet: LedgerWallet): string {
-  return wallet === 'auditor_cash' ? 'Auditor cash' : 'Petty cash'
-}
-
 function negativeDayMessage(day: NegativeDay): string {
-  return `${walletLabel(day.wallet)} would go negative on ${day.date} (-${formatPeso(Math.abs(day.balance))}).`
+  return `${ledgerWalletLabel(day.wallet)} would go negative on ${day.date} (-${formatPeso(Math.abs(day.balance))}).`
 }
 
 export function validateRemoval(
@@ -147,7 +153,8 @@ export function weekSummary(
       .filter((entry) => entry.type === 'owner_remittance')
       .reduce((sum, entry) => sum + entry.amount, 0),
     auditorCashRemaining: walletRemaining(entries, 'auditor_cash'),
-    pettyCashRemaining: walletRemaining(entries, 'petty_cash')
+    expenseRemaining: walletRemaining(entries, 'expense'),
+    gcashRemaining: walletRemaining(entries, 'gcash')
   }
 }
 
@@ -156,10 +163,10 @@ function formatPeso(value: number): string {
 }
 
 function proposedRows(input: CreateLedgerEntryInput): Array<Pick<LedgerEntry, 'type' | 'wallet' | 'amount'>> {
-  if (input.type === 'petty_issue') {
+  if (input.type === 'fund_expense') {
     return [
-      { type: 'petty_issue', wallet: 'auditor_cash', amount: input.amount },
-      { type: 'petty_issue', wallet: 'petty_cash', amount: input.amount }
+      { type: 'fund_expense', wallet: 'auditor_cash', amount: input.amount },
+      { type: 'fund_expense', wallet: 'expense', amount: input.amount }
     ]
   }
   return [{ type: input.type, wallet: input.wallet, amount: input.amount }]
@@ -179,6 +186,9 @@ export function validateEntry(
   if (auditorOnly.includes(input.type) && input.wallet !== 'auditor_cash') {
     return { ok: false, message: 'This entry must use auditor cash.' }
   }
+  if (input.type === 'gcash_remittance' && input.wallet !== 'gcash') {
+    return { ok: false, message: 'This entry must use GCash.' }
+  }
   const next = [...existing]
   for (const row of proposedRows(input)) {
     const remaining = walletRemaining(next, row.wallet)
@@ -187,7 +197,7 @@ export function validateEntry(
     if (remaining + delta[wallet] < 0) {
       return {
         ok: false,
-        message: `${walletLabel(wallet)} remaining is ${formatPeso(remaining)}. This would go negative.`
+        message: `${ledgerWalletLabel(wallet)} remaining is ${formatPeso(remaining)}. This would go negative.`
       }
     }
     next.push({
@@ -215,10 +225,20 @@ export function ledgerTypeLabel(type: LedgerEntryType): string {
   const labels: Record<LedgerEntryType, string> = {
     opening_cash: 'Starting cash',
     pos_float: 'Cash to POS',
-    pos_remittance: 'Remittance from POS',
+    pos_remittance: 'Petty cash remittance (EOD)',
+    gcash_remittance: 'GCash remittance',
     owner_remittance: 'Remit to owner',
-    petty_issue: 'Petty cash issued',
+    fund_expense: 'Fund expense wallet',
     expense: 'Expense'
   }
   return labels[type]
+}
+
+export function ledgerWalletLabel(wallet: LedgerWallet): string {
+  const labels: Record<LedgerWallet, string> = {
+    auditor_cash: 'Auditor cash',
+    expense: 'Expense wallet',
+    gcash: 'GCash'
+  }
+  return labels[wallet]
 }

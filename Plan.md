@@ -41,7 +41,7 @@ Create a POS that works locally (on tablet or laptop), tracks daily sales and in
 | **Sales** | Tracks daily/weekly revenue and profit |
 | **Inventory** | Manages solid and liquid ingredients |
 | **Expenses** | Records operational costs |
-| **Ledger** | Auditor cash book: POS float/remittance, petty cash, operating expenses, weekly owner remit |
+| **Ledger** | Auditor cash book: POS float, EOD petty cash remittance, expense wallet, GCash, weekly owner remit |
 | **Reports** | Exports daily CSV summaries |
 | **Dashboard** | Visual insights and real-time analytics |
 
@@ -131,18 +131,19 @@ Built using **Chart.js or ApexCharts**, showing:
 
 A **manual cash book** for Admin and Auditor (not staff). It is **independent data**: the auditor types every amount. It does not read or write `orders`, `expenses`, or `store_sessions`. The Expenses page stays as it is.
 
-Two wallets:
+Three wallets:
 
 1. **Auditor cash** — cash the auditor is holding.
-2. **Petty cash** — cash staff is holding for small spends.
+2. **Expense wallet** — cash set aside for operating spends (funded from auditor cash).
+3. **GCash** — digital wallet balance from GCash remittances.
 
 Typical flow:
 
 1. Auditor records starting cash on hand (auditor cash up), then gives cash to the POS (auditor cash down).
-2. POS remits sales cash to the auditor (auditor cash up).
-3. Auditor issues petty cash to staff (auditor cash down, petty cash up).
-4. Expenses are entered on Ledger: labor/salary, utilities, and other costs, paid from **auditor cash** or **petty cash** (not only staff petty-cash spends).
-5. Weekly, the auditor remits a **chosen amount** to the owner — not the full remaining — so leftover auditor cash and petty cash can run the next week.
+2. Every EOD the POS remits petty cash to the auditor (`pos_remittance` — auditor cash up). There is no standing petty-cash float.
+3. Auditor funds the expense wallet from auditor cash when needed (auditor cash down, expense wallet up).
+4. GCash remittances go into the GCash wallet. Expenses can be paid from **auditor cash**, **expense wallet**, or **GCash**.
+5. Weekly, the auditor remits a **chosen amount** to the owner — not the full remaining — so leftover auditor cash, expense wallet, and GCash can run the next week.
 
 Remaining balances are calculated from the lines entered. See `docs/superpowers/specs/2026-09-25-ledger-design.md`.
 
@@ -260,12 +261,12 @@ Manual cash-control lines for the Ledger page. Not tied to `orders` or `expenses
 |---------|------|-------------|
 | id | uuid | Primary key |
 | entry_date | date | Calendar date of the event (Asia/Manila) |
-| type | text | `opening_cash`, `pos_float`, `pos_remittance`, `owner_remittance`, `petty_issue`, `expense` |
-| wallet | text | `auditor_cash` or `petty_cash` |
+| type | text | `opening_cash`, `pos_float`, `pos_remittance`, `gcash_remittance`, `owner_remittance`, `fund_expense`, `expense` |
+| wallet | text | `auditor_cash`, `expense`, or `gcash` |
 | amount | numeric | Always positive; sign comes from type + wallet |
 | category | text | Required for expenses (Labor, Utilities, …); NULL otherwise |
 | note | text | Optional |
-| transfer_id | uuid | Links the two rows of a petty-cash issue |
+| transfer_id | uuid | Links the two rows of a fund-expense transfer |
 | created_by | text | Who entered the line |
 | created_at | timestamptz | Created |
 | updated_at | timestamptz | Updated |

@@ -78,7 +78,8 @@ describe('Ledger.vue', () => {
     await nextTick()
     const auditor = el.querySelector('[data-testid="auditor-remaining"]')?.textContent ?? ''
     expect(auditor).toContain('3,000.00')
-    expect(el.querySelector('[data-testid="petty-remaining"]')?.textContent).toContain('0.00')
+    expect(el.querySelector('[data-testid="expense-remaining"]')?.textContent).toContain('0.00')
+    expect(el.querySelector('[data-testid="gcash-remaining"]')?.textContent).toContain('0.00')
     app.unmount()
   })
 

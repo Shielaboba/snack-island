@@ -1,11 +1,12 @@
-export type LedgerWallet = 'auditor_cash' | 'petty_cash'
+export type LedgerWallet = 'auditor_cash' | 'expense' | 'gcash'
 
 export type LedgerEntryType =
   | 'opening_cash'
   | 'pos_float'
   | 'pos_remittance'
+  | 'gcash_remittance'
   | 'owner_remittance'
-  | 'petty_issue'
+  | 'fund_expense'
   | 'expense'
 
 export type LedgerExpenseCategory =
@@ -21,12 +22,15 @@ export type LedgerExpenseCategory =
 
 export const LEDGER_TABLE = 'ledger_entries'
 
+export const LEDGER_WALLETS: LedgerWallet[] = ['auditor_cash', 'expense', 'gcash']
+
 export const LEDGER_ENTRY_TYPES: LedgerEntryType[] = [
   'opening_cash',
   'pos_float',
   'pos_remittance',
+  'gcash_remittance',
   'owner_remittance',
-  'petty_issue',
+  'fund_expense',
   'expense'
 ]
 

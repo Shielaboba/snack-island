@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-text">
         <h1>Ledger</h1>
-        <p>Auditor cash and petty cash</p>
+        <p>Auditor cash, expense wallet, and GCash</p>
       </div>
       <div class="header-actions">
         <button data-testid="remit-owner-btn" class="btn-secondary" type="button" @click="openRemit">
@@ -24,8 +24,14 @@
       </div>
       <div class="stat-card">
         <div class="stat-content">
-          <span class="stat-label">Petty cash remaining</span>
-          <span class="stat-value" data-testid="petty-remaining">₱{{ formatCurrency(pettyRemaining) }}</span>
+          <span class="stat-label">Expense wallet remaining</span>
+          <span class="stat-value" data-testid="expense-remaining">₱{{ formatCurrency(expenseRemaining) }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-content">
+          <span class="stat-label">GCash remaining</span>
+          <span class="stat-value" data-testid="gcash-remaining">₱{{ formatCurrency(gcashRemaining) }}</span>
         </div>
       </div>
     </div>
@@ -49,20 +55,18 @@
         <label class="filter-label">Wallet</label>
         <select v-model="walletFilter" class="filter-select">
           <option value="">All wallets</option>
-          <option value="auditor_cash">Auditor cash</option>
-          <option value="petty_cash">Petty cash</option>
+          <option v-for="wallet in LEDGER_WALLETS" :key="wallet" :value="wallet">
+            {{ ledgerWalletLabel(wallet) }}
+          </option>
         </select>
       </div>
       <div class="filter-group">
         <label class="filter-label">Type</label>
         <select v-model="typeFilter" class="filter-select">
           <option value="">All types</option>
-          <option value="opening_cash">Starting cash</option>
-          <option value="pos_float">Cash to POS</option>
-          <option value="pos_remittance">Remittance from POS</option>
-          <option value="owner_remittance">Remit to owner</option>
-          <option value="petty_issue">Petty cash issued</option>
-          <option value="expense">Expense</option>
+          <option v-for="entryType in LEDGER_ENTRY_TYPES" :key="entryType" :value="entryType">
+            {{ ledgerTypeLabel(entryType) }}
+          </option>
         </select>
       </div>
     </div>
@@ -90,7 +94,7 @@
           <td>{{ row.entry_date }}</td>
           <td>{{ ledgerTypeLabel(row.type) }}</td>
           <td>{{ row.category || '—' }}</td>
-          <td>{{ row.wallet === 'auditor_cash' ? 'Auditor cash' : 'Petty cash' }}</td>
+          <td>{{ ledgerWalletLabel(row.wallet) }}</td>
           <td>{{ signedAmount(row) }}</td>
           <td>₱{{ formatCurrency(dailyRemaining(entries, row.wallet, row.entry_date)) }}</td>
           <td>{{ row.note || '—' }}</td>
@@ -119,12 +123,13 @@ import { computed, onMounted, ref } from 'vue'
 import LedgerEntryModal from './LedgerEntryModal.vue'
 import { authService } from '../services/authService'
 import { ledgerService } from '../services/ledgerService'
-import type { CreateLedgerEntryInput, LedgerEntry } from '../models/Ledger'
+import { LEDGER_ENTRY_TYPES, LEDGER_WALLETS, type CreateLedgerEntryInput, type LedgerEntry } from '../models/Ledger'
 import {
   dailyRemaining,
   entriesInDateRange,
   entryDelta,
   ledgerTypeLabel,
+  ledgerWalletLabel,
   manilaWeekWindow,
   walletRemaining,
   weekSummary
@@ -144,7 +149,8 @@ const walletFilter = ref('')
 const typeFilter = ref('')
 
 const auditorRemaining = computed(() => walletRemaining(entries.value, 'auditor_cash'))
-const pettyRemaining = computed(() => walletRemaining(entries.value, 'petty_cash'))
+const expenseRemaining = computed(() => walletRemaining(entries.value, 'expense'))
+const gcashRemaining = computed(() => walletRemaining(entries.value, 'gcash'))
 const summary = computed(() => weekSummary(entries.value, week))
 const visibleRows = computed(() => {
   let rows = entriesInDateRange(
@@ -155,7 +161,7 @@ const visibleRows = computed(() => {
   if (walletFilter.value) rows = rows.filter((row) => row.wallet === walletFilter.value)
   if (typeFilter.value) rows = rows.filter((row) => row.type === typeFilter.value)
   return rows.filter((row, index, list) => {
-    if (row.type !== 'petty_issue' || !row.transfer_id) return true
+    if (row.type !== 'fund_expense' || !row.transfer_id) return true
     return list.findIndex((other) => other.transfer_id === row.transfer_id) === index
   })
 })
@@ -178,8 +184,7 @@ function formatCurrency(value: number): string {
 }
 
 function signedAmount(row: LedgerEntry): string {
-  const delta = entryDelta(row)
-  const value = row.wallet === 'auditor_cash' ? delta.auditor_cash : delta.petty_cash
+  const value = entryDelta(row)[row.wallet]
   const abs = formatCurrency(Math.abs(value))
   return value < 0 ? `-₱${abs}` : `₱${abs}`
 }

@@ -5,6 +5,7 @@ import {
   entriesInDateRange,
   entryDelta,
   ledgerTypeLabel,
+  ledgerWalletLabel,
   manilaWeekWindow,
   manilaYmd,
   validateEntry,
@@ -29,33 +30,42 @@ function row(partial: Partial<LedgerEntry> & Pick<LedgerEntry, 'type' | 'wallet'
   }
 }
 
+const empty = { auditor_cash: 0, expense: 0, gcash: 0 }
+
 describe('entryDelta', () => {
-  it('credits auditor cash for opening_cash and pos_remittance', () => {
+  it('credits auditor cash for opening_cash and EOD petty cash remittance', () => {
     expect(entryDelta({ type: 'opening_cash', wallet: 'auditor_cash', amount: 5000 }))
-      .toEqual({ auditor_cash: 5000, petty_cash: 0 })
+      .toEqual({ ...empty, auditor_cash: 5000 })
     expect(entryDelta({ type: 'pos_remittance', wallet: 'auditor_cash', amount: 2000 }))
-      .toEqual({ auditor_cash: 2000, petty_cash: 0 })
+      .toEqual({ ...empty, auditor_cash: 2000 })
+  })
+
+  it('credits GCash for gcash_remittance', () => {
+    expect(entryDelta({ type: 'gcash_remittance', wallet: 'gcash', amount: 750 }))
+      .toEqual({ ...empty, gcash: 750 })
   })
 
   it('debits auditor cash for pos_float, owner_remittance, and auditor expense', () => {
     expect(entryDelta({ type: 'pos_float', wallet: 'auditor_cash', amount: 1000 }))
-      .toEqual({ auditor_cash: -1000, petty_cash: 0 })
+      .toEqual({ ...empty, auditor_cash: -1000 })
     expect(entryDelta({ type: 'owner_remittance', wallet: 'auditor_cash', amount: 3000 }))
-      .toEqual({ auditor_cash: -3000, petty_cash: 0 })
+      .toEqual({ ...empty, auditor_cash: -3000 })
     expect(entryDelta({ type: 'expense', wallet: 'auditor_cash', amount: 400 }))
-      .toEqual({ auditor_cash: -400, petty_cash: 0 })
+      .toEqual({ ...empty, auditor_cash: -400 })
   })
 
-  it('moves petty issue on the matching wallet only', () => {
-    expect(entryDelta({ type: 'petty_issue', wallet: 'auditor_cash', amount: 500 }))
-      .toEqual({ auditor_cash: -500, petty_cash: 0 })
-    expect(entryDelta({ type: 'petty_issue', wallet: 'petty_cash', amount: 500 }))
-      .toEqual({ auditor_cash: 0, petty_cash: 500 })
+  it('moves fund_expense on the matching wallet only', () => {
+    expect(entryDelta({ type: 'fund_expense', wallet: 'auditor_cash', amount: 500 }))
+      .toEqual({ ...empty, auditor_cash: -500 })
+    expect(entryDelta({ type: 'fund_expense', wallet: 'expense', amount: 500 }))
+      .toEqual({ ...empty, expense: 500 })
   })
 
-  it('debits only petty cash for a petty-cash expense', () => {
-    expect(entryDelta({ type: 'expense', wallet: 'petty_cash', amount: 80 }))
-      .toEqual({ auditor_cash: 0, petty_cash: -80 })
+  it('debits only the chosen wallet for an expense', () => {
+    expect(entryDelta({ type: 'expense', wallet: 'expense', amount: 80 }))
+      .toEqual({ ...empty, expense: -80 })
+    expect(entryDelta({ type: 'expense', wallet: 'gcash', amount: 50 }))
+      .toEqual({ ...empty, gcash: -50 })
   })
 })
 
@@ -64,31 +74,32 @@ describe('walletRemaining and dailyRemaining', () => {
     row({ id: '1', entry_date: '2026-09-21', type: 'opening_cash', wallet: 'auditor_cash', amount: 5000 }),
     row({ id: '2', entry_date: '2026-09-21', type: 'pos_float', wallet: 'auditor_cash', amount: 1000 }),
     row({ id: '3', entry_date: '2026-09-22', type: 'pos_remittance', wallet: 'auditor_cash', amount: 2500 }),
-    row({ id: '4', entry_date: '2026-09-22', type: 'petty_issue', wallet: 'auditor_cash', amount: 500, transfer_id: 't1' }),
-    row({ id: '5', entry_date: '2026-09-22', type: 'petty_issue', wallet: 'petty_cash', amount: 500, transfer_id: 't1' }),
-    row({ id: '6', entry_date: '2026-09-23', type: 'expense', wallet: 'petty_cash', amount: 120, category: 'Supplies' }),
+    row({ id: '4', entry_date: '2026-09-22', type: 'fund_expense', wallet: 'auditor_cash', amount: 500, transfer_id: 't1' }),
+    row({ id: '5', entry_date: '2026-09-22', type: 'fund_expense', wallet: 'expense', amount: 500, transfer_id: 't1' }),
+    row({ id: '6', entry_date: '2026-09-23', type: 'expense', wallet: 'expense', amount: 120, category: 'Supplies' }),
     row({ id: '7', entry_date: '2026-09-24', type: 'expense', wallet: 'auditor_cash', amount: 800, category: 'Labor' }),
-    row({ id: '8', entry_date: '2026-09-25', type: 'owner_remittance', wallet: 'auditor_cash', amount: 4000 })
+    row({ id: '8', entry_date: '2026-09-25', type: 'owner_remittance', wallet: 'auditor_cash', amount: 4000 }),
+    row({ id: '9', entry_date: '2026-09-22', type: 'gcash_remittance', wallet: 'gcash', amount: 900 }),
+    row({ id: '10', entry_date: '2026-09-23', type: 'expense', wallet: 'gcash', amount: 100, category: 'Utilities' })
   ]
 
   it('sums all deltas per wallet including leftover after a partial owner remit', () => {
-    // 5000 - 1000 + 2500 - 500 - 800 - 4000 = 1200 auditor
     expect(walletRemaining(entries, 'auditor_cash')).toBe(1200)
-    // 500 - 120 = 380 petty
-    expect(walletRemaining(entries, 'petty_cash')).toBe(380)
+    expect(walletRemaining(entries, 'expense')).toBe(380)
+    expect(walletRemaining(entries, 'gcash')).toBe(800)
   })
 
   it('daily remaining is the running balance through that date', () => {
     expect(dailyRemaining(entries, 'auditor_cash', '2026-09-21')).toBe(4000)
     expect(dailyRemaining(entries, 'auditor_cash', '2026-09-22')).toBe(6000)
-    expect(dailyRemaining(entries, 'petty_cash', '2026-09-22')).toBe(500)
-    expect(dailyRemaining(entries, 'petty_cash', '2026-09-23')).toBe(380)
+    expect(dailyRemaining(entries, 'expense', '2026-09-22')).toBe(500)
+    expect(dailyRemaining(entries, 'expense', '2026-09-23')).toBe(380)
   })
 
-  it('expense on auditor cash does not change petty cash', () => {
-    const before = walletRemaining(entries.slice(0, 6), 'petty_cash')
+  it('expense on auditor cash does not change the expense wallet', () => {
+    const before = walletRemaining(entries.slice(0, 6), 'expense')
     const afterLabor = [...entries.slice(0, 6), entries[6]]
-    expect(walletRemaining(afterLabor, 'petty_cash')).toBe(before)
+    expect(walletRemaining(afterLabor, 'expense')).toBe(before)
   })
 })
 
@@ -139,17 +150,28 @@ describe('validateEntry', () => {
     ).ok).toBe(false)
   })
 
-  it('validates petty_issue against both wallets (auditor must cover the issue)', () => {
+  it('validates fund_expense against auditor cash covering the transfer', () => {
     const ok = validateEntry(
-      { entry_date: '2026-09-21', type: 'petty_issue', wallet: 'auditor_cash', amount: 300 },
+      { entry_date: '2026-09-21', type: 'fund_expense', wallet: 'auditor_cash', amount: 300 },
       seeded
     )
     expect(ok).toEqual({ ok: true })
     const tooMuch = validateEntry(
-      { entry_date: '2026-09-21', type: 'petty_issue', wallet: 'auditor_cash', amount: 1001 },
+      { entry_date: '2026-09-21', type: 'fund_expense', wallet: 'auditor_cash', amount: 1001 },
       seeded
     )
     expect(tooMuch.ok).toBe(false)
+  })
+
+  it('requires gcash_remittance on the GCash wallet', () => {
+    expect(validateEntry(
+      { entry_date: '2026-09-21', type: 'gcash_remittance', wallet: 'auditor_cash', amount: 10 },
+      []
+    ).ok).toBe(false)
+    expect(validateEntry(
+      { entry_date: '2026-09-21', type: 'gcash_remittance', wallet: 'gcash', amount: 10 },
+      []
+    )).toEqual({ ok: true })
   })
 })
 
@@ -177,7 +199,8 @@ describe('weekSummary and filters', () => {
     row({ id: '2', entry_date: '2026-09-22', type: 'pos_remittance', wallet: 'auditor_cash', amount: 2000 }),
     row({ id: '3', entry_date: '2026-09-23', type: 'expense', wallet: 'auditor_cash', amount: 300, category: 'Utilities' }),
     row({ id: '4', entry_date: '2026-09-25', type: 'owner_remittance', wallet: 'auditor_cash', amount: 1500 }),
-    row({ id: '5', entry_date: '2026-09-14', type: 'opening_cash', wallet: 'auditor_cash', amount: 50 })
+    row({ id: '5', entry_date: '2026-09-14', type: 'opening_cash', wallet: 'auditor_cash', amount: 50 }),
+    row({ id: '6', entry_date: '2026-09-22', type: 'gcash_remittance', wallet: 'gcash', amount: 400 })
   ]
 
   it('week totals use only lines in the week; remaining uses all entries', () => {
@@ -186,22 +209,27 @@ describe('weekSummary and filters', () => {
     expect(summary.expensesOut).toBe(300)
     expect(summary.ownerRemittance).toBe(1500)
     expect(summary.auditorCashRemaining).toBe(5250)
+    expect(summary.gcashRemaining).toBe(400)
   })
 
   it('entriesInDateRange is inclusive', () => {
     expect(entriesInDateRange(entries, '2026-09-21', '2026-09-27').map((e) => e.id))
-      .toEqual(['1', '2', '3', '4'])
+      .toEqual(['1', '2', '3', '4', '6'])
   })
 })
 
-describe('ledgerTypeLabel', () => {
-  it('returns the spec human labels', () => {
+describe('ledgerTypeLabel and ledgerWalletLabel', () => {
+  it('returns the human labels', () => {
     expect(ledgerTypeLabel('opening_cash')).toBe('Starting cash')
     expect(ledgerTypeLabel('pos_float')).toBe('Cash to POS')
-    expect(ledgerTypeLabel('pos_remittance')).toBe('Remittance from POS')
+    expect(ledgerTypeLabel('pos_remittance')).toBe('Petty cash remittance (EOD)')
+    expect(ledgerTypeLabel('gcash_remittance')).toBe('GCash remittance')
     expect(ledgerTypeLabel('owner_remittance')).toBe('Remit to owner')
-    expect(ledgerTypeLabel('petty_issue')).toBe('Petty cash issued')
+    expect(ledgerTypeLabel('fund_expense')).toBe('Fund expense wallet')
     expect(ledgerTypeLabel('expense')).toBe('Expense')
+    expect(ledgerWalletLabel('auditor_cash')).toBe('Auditor cash')
+    expect(ledgerWalletLabel('expense')).toBe('Expense wallet')
+    expect(ledgerWalletLabel('gcash')).toBe('GCash')
   })
 })
 

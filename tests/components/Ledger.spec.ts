@@ -80,6 +80,25 @@ describe('Ledger.vue', () => {
     expect(auditor).toContain('3,000.00')
     expect(el.querySelector('[data-testid="expense-remaining"]')?.textContent).toContain('0.00')
     expect(el.querySelector('[data-testid="gcash-remaining"]')?.textContent).toContain('0.00')
+    expect(el.querySelector('[data-testid="auditor-card"]')?.textContent).toContain('Held by auditor')
+    expect(el.querySelector('[data-testid="expense-card"]')?.textContent).toContain('Operating spends')
+    expect(el.querySelector('[data-testid="gcash-card"]')?.textContent).toContain('Digital wallet')
+    app.unmount()
+  })
+
+  it('clicking a wallet card filters the table to that wallet', async () => {
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    const card = el.querySelector('[data-testid="gcash-card"]') as HTMLButtonElement
+    card.click()
+    await nextTick()
+    const filter = el.querySelector('[data-testid="wallet-filter"]') as HTMLSelectElement
+    expect(filter.value).toBe('gcash')
+    expect(card.classList.contains('active')).toBe(true)
+    card.click()
+    await nextTick()
+    expect(filter.value).toBe('')
     app.unmount()
   })
 

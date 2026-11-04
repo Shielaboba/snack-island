@@ -140,7 +140,7 @@ Three wallets:
 Typical flow:
 
 1. Auditor records starting cash on hand (auditor cash up), then gives cash to the POS (auditor cash down).
-2. Every EOD the POS remits petty cash to the auditor (`pos_remittance` — auditor cash up). There is no standing petty-cash float.
+2. Every EOD the auditor records **Cart Cash Remittance** (`pos_remittance`): Total Sales and Petty Cash Returned. Auditor cash goes up by the sum. There is no standing petty-cash float.
 3. Auditor funds the expense wallet from auditor cash when needed (auditor cash down, expense wallet up).
 4. GCash remittances go into the GCash wallet. Expenses can be paid from **auditor cash**, **expense wallet**, or **GCash**.
 5. Weekly, the auditor remits a **chosen amount** to the owner — not the full remaining — so leftover auditor cash, expense wallet, and GCash can run the next week.
@@ -256,7 +256,9 @@ Manual cash-control lines for the Ledger page. Not tied to `orders` or `expenses
 | entry_date | date | Calendar date of the event (Asia/Manila) |
 | type | text | `opening_cash`, `pos_float`, `pos_remittance`, `gcash_remittance`, `owner_remittance`, `fund_expense`, `expense` |
 | wallet | text | `auditor_cash`, `expense`, or `gcash` |
-| amount | numeric | Always positive; sign comes from type + wallet |
+| amount | numeric | Always positive; sign comes from type + wallet. For cart remittance this is Total Sales + Petty Cash Returned |
+| total_sales | numeric | Required for `pos_remittance`; NULL otherwise |
+| petty_cash_returned | numeric | Required for `pos_remittance`; NULL otherwise |
 | category | text | Required for expenses (Labor, Utilities, …); NULL otherwise |
 | note | text | Optional |
 | transfer_id | uuid | Links the two rows of a fund-expense transfer |

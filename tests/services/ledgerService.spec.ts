@@ -108,6 +108,42 @@ describe('ledgerService.create', () => {
     expect(payload.every((row) => row.type === 'fund_expense')).toBe(true)
   })
 
+  it('inserts cart cash remittance with total sales, petty cash returned, and summed amount', async () => {
+    const inserted = {
+      ...opening,
+      id: 'c1',
+      type: 'pos_remittance' as const,
+      amount: 2050,
+      total_sales: 1800,
+      petty_cash_returned: 250
+    }
+    const mockSelect = vi.fn().mockResolvedValue({ data: [inserted], error: null })
+    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
+    vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
+
+    await ledgerService.create(
+      {
+        entry_date: '2026-09-21',
+        type: 'pos_remittance',
+        wallet: 'auditor_cash',
+        amount: 0,
+        total_sales: 1800,
+        petty_cash_returned: 250
+      },
+      []
+    )
+    expect(mockInsert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: 'pos_remittance',
+        wallet: 'auditor_cash',
+        amount: 2050,
+        total_sales: 1800,
+        petty_cash_returned: 250,
+        transfer_id: null
+      })
+    ])
+  })
+
   it('inserts a single gcash_remittance row on the GCash wallet', async () => {
     const inserted = {
       ...opening,

@@ -24,6 +24,8 @@ function row(partial: Partial<LedgerEntry> & Pick<LedgerEntry, 'type' | 'wallet'
     category: partial.category ?? null,
     note: partial.note ?? null,
     transfer_id: partial.transfer_id ?? null,
+    total_sales: partial.total_sales ?? null,
+    petty_cash_returned: partial.petty_cash_returned ?? null,
     created_by: partial.created_by ?? 'auditor',
     created_at: partial.created_at ?? '2026-09-21T00:00:00.000Z',
     updated_at: partial.updated_at ?? '2026-09-21T00:00:00.000Z'
@@ -173,6 +175,38 @@ describe('validateEntry', () => {
       []
     )).toEqual({ ok: true })
   })
+
+  it('credits auditor cash with Total Sales plus Petty Cash Returned', () => {
+    expect(validateEntry(
+      {
+        entry_date: '2026-09-21',
+        type: 'pos_remittance',
+        wallet: 'auditor_cash',
+        amount: 0,
+        total_sales: 1800,
+        petty_cash_returned: 200
+      },
+      []
+    )).toEqual({ ok: true })
+  })
+
+  it('rejects cart cash remittance when both parts are missing or the total is 0', () => {
+    expect(validateEntry(
+      { entry_date: '2026-09-21', type: 'pos_remittance', wallet: 'auditor_cash', amount: 500 },
+      []
+    ).ok).toBe(false)
+    expect(validateEntry(
+      {
+        entry_date: '2026-09-21',
+        type: 'pos_remittance',
+        wallet: 'auditor_cash',
+        amount: 0,
+        total_sales: 0,
+        petty_cash_returned: 0
+      },
+      []
+    ).ok).toBe(false)
+  })
 })
 
 describe('manila week window', () => {
@@ -222,7 +256,7 @@ describe('ledgerTypeLabel and ledgerWalletLabel', () => {
   it('returns the human labels', () => {
     expect(ledgerTypeLabel('opening_cash')).toBe('Starting cash')
     expect(ledgerTypeLabel('pos_float')).toBe('Cash to POS')
-    expect(ledgerTypeLabel('pos_remittance')).toBe('Petty cash remittance (EOD)')
+    expect(ledgerTypeLabel('pos_remittance')).toBe('Cart Cash Remittance')
     expect(ledgerTypeLabel('gcash_remittance')).toBe('GCash remittance')
     expect(ledgerTypeLabel('owner_remittance')).toBe('Remit to owner')
     expect(ledgerTypeLabel('fund_expense')).toBe('Fund expense wallet')

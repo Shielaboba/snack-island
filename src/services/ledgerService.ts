@@ -4,10 +4,10 @@ import {
   type CreateLedgerEntryInput,
   type LedgerEntry
 } from '../models/Ledger'
-import { validateEntry, validateRemoval } from '../modules/ledger/ledgerUtils'
+import { cartRemittanceAmount, validateEntry, validateRemoval } from '../modules/ledger/ledgerUtils'
 
 const SELECT_COLUMNS =
-  'id, entry_date, type, wallet, amount, category, note, transfer_id, created_by, created_at, updated_at'
+  'id, entry_date, type, wallet, amount, category, note, transfer_id, total_sales, petty_cash_returned, created_by, created_at, updated_at'
 
 function assertOk(input: CreateLedgerEntryInput, existing: LedgerEntry[]) {
   const result = validateEntry(input, existing)
@@ -17,14 +17,17 @@ function assertOk(input: CreateLedgerEntryInput, existing: LedgerEntry[]) {
 }
 
 function toInsertRow(input: CreateLedgerEntryInput, transferId: string | null) {
+  const isCart = input.type === 'pos_remittance'
   return {
     entry_date: input.entry_date,
     type: input.type,
     wallet: input.wallet,
-    amount: input.amount,
+    amount: isCart ? cartRemittanceAmount(input) : input.amount,
     category: input.type === 'expense' ? input.category ?? null : null,
     note: input.note ?? null,
     transfer_id: transferId,
+    total_sales: isCart ? Number(input.total_sales) : null,
+    petty_cash_returned: isCart ? Number(input.petty_cash_returned) : null,
     created_by: input.created_by ?? null
   }
 }
@@ -73,6 +76,9 @@ export const ledgerService = {
       amount: patch.amount ?? current.amount,
       category: patch.category !== undefined ? patch.category : current.category,
       note: patch.note !== undefined ? patch.note : current.note,
+      total_sales: patch.total_sales !== undefined ? patch.total_sales : current.total_sales,
+      petty_cash_returned:
+        patch.petty_cash_returned !== undefined ? patch.petty_cash_returned : current.petty_cash_returned,
       created_by: current.created_by
     }
     const others = existing.filter((row) =>
@@ -82,11 +88,14 @@ export const ledgerService = {
     )
     assertOk(merged, others)
 
+    const isCart = merged.type === 'pos_remittance'
     const payload = {
       entry_date: merged.entry_date,
-      amount: merged.amount,
+      amount: isCart ? cartRemittanceAmount(merged) : merged.amount,
       note: merged.note ?? null,
       category: merged.type === 'expense' ? merged.category ?? null : null,
+      total_sales: isCart ? Number(merged.total_sales) : null,
+      petty_cash_returned: isCart ? Number(merged.petty_cash_returned) : null,
       updated_at: new Date().toISOString()
     }
 

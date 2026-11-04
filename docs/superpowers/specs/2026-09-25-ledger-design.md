@@ -83,7 +83,7 @@ Route: `/ledger`
 |---|---|---|
 | `opening_cash` | `auditor_cash` | Auditor cash **up** (starting cash on hand, or extra cash that is not a POS remit) |
 | `pos_float` | `auditor_cash` | Auditor cash **down** (gave starting cash to POS) |
-| `pos_remittance` | `auditor_cash` | Auditor cash **up** (POS remitted petty cash at EOD) |
+| `pos_remittance` | `auditor_cash` | Auditor cash **up** by Total Sales + Petty Cash Returned (Cart Cash Remittance) |
 | `gcash_remittance` | `gcash` | GCash **up** |
 | `owner_remittance` | `auditor_cash` | Auditor cash **down** by the amount she chooses (partial is valid) |
 | `fund_expense` | both | Auditor cash **down**, expense wallet **up** (same amount, shared `transfer_id`) |
@@ -219,7 +219,7 @@ Human labels:
 
 - `opening_cash` → “Starting cash”
 - `pos_float` → “Cash to POS”
-- `pos_remittance` → “Petty cash remittance (EOD)”
+- `pos_remittance` → “Cart Cash Remittance” (fields: Total Sales, Petty Cash Returned; amount is the sum)
 - `gcash_remittance` → “GCash remittance”
 - `owner_remittance` → “Remit to owner”
 - `fund_expense` → “Fund expense wallet”

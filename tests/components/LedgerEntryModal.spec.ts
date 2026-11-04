@@ -30,6 +30,48 @@ describe('LedgerEntryModal', () => {
     app.unmount()
   })
 
+  it('defaults Total Expense to the expense wallet without locking it', async () => {
+    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const type = document.querySelector('[data-testid="ledger-type"]') as HTMLSelectElement
+    const wallet = document.querySelector('[data-testid="ledger-wallet"]') as HTMLSelectElement
+    expect(wallet.value).toBe('auditor_cash')
+    type.value = 'expense'
+    type.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(wallet.value).toBe('expense')
+    expect(wallet.disabled).toBe(false)
+    wallet.value = 'gcash'
+    wallet.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(wallet.value).toBe('gcash')
+    app.unmount()
+  })
+
+  it('keeps the saved wallet when editing a Total Expense', async () => {
+    const { app } = mountModal({
+      isOpen: true,
+      mode: 'edit',
+      entry: {
+        id: 'e1',
+        entry_date: '2026-11-04',
+        type: 'expense',
+        wallet: 'auditor_cash',
+        amount: 80,
+        category: 'Labor',
+        note: null,
+        transfer_id: null,
+        created_by: 'ana',
+        created_at: '2026-11-04T00:00:00.000Z',
+        updated_at: '2026-11-04T00:00:00.000Z'
+      }
+    })
+    await nextTick()
+    const wallet = document.querySelector('[data-testid="ledger-wallet"]') as HTMLSelectElement
+    expect(wallet.value).toBe('auditor_cash')
+    app.unmount()
+  })
+
   it('requires category only for expense', async () => {
     const { el, app } = mountModal({ isOpen: true, mode: 'add' })
     await nextTick()

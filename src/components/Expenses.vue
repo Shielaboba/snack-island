@@ -1,327 +1,259 @@
 <template>
   <div class="expenses-page">
-    <!-- Page Header -->
-    <div class="page-header">
-      <div class="header-text">
-        <h1>Expense Management</h1>
-        <p>Track and manage your business expenses</p>
+    <!-- Header -->
+    <header class="page-header">
+      <div>
+        <h1>Expenses</h1>
+        <p class="subtitle">Track what the business spends and who needs paying back.</p>
       </div>
-      <button class="btn-primary" @click="openAddModal">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <button class="btn-primary" @click="openAddModal" title="Shortcut: N">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
-        Add New Expense
+        Add expense
       </button>
-    </div>
+    </header>
 
-    <!-- Filters Section -->
-    <div class="filters-section">
-      <div class="search-container">
-        <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <path d="m21 21-4.35-4.35"></path>
-        </svg>
-        <input 
-          type="text" 
-          class="search-input" 
-          placeholder="Search by description, category, or paid by..." 
-          v-model="searchQuery" 
-        />
-      </div>
-      
-      <div class="filter-group">
-        <label class="filter-label">Category</label>
-        <select v-model="selectedCategory" class="filter-select">
-          <option value="">All Categories</option>
-          <option value="Supplies">Supplies</option>
-          <option value="Gas">Gas</option>
-          <option value="Misc">Misc</option>
-          <option value="Maintenance">Maintenance</option>
-          <option value="Equipment">Equipment</option>
-          <option value="Ingredients">Ingredients</option>
-          <option value="Utilities">Utilities</option>
-          <option value="Labor">Labor</option>
-          <option value="Machinery">Machinery</option>
-          <option value="Government Fees">Government Fees</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <label class="filter-label">Start Date</label>
-        <input type="date" v-model="startDate" class="filter-input" />
-      </div>
-
-      <div class="filter-group">
-        <label class="filter-label">End Date</label>
-        <input type="date" v-model="endDate" class="filter-input" />
-      </div>
-
-      <div class="filter-group">
-        <label class="filter-label">Reimburse Status</label>
-        <select v-model="selectedReimburseStatus" class="filter-select" data-testid="reimburse-select">
-          <option value="">All</option>
-          <option value="1">Needs Reimbursement</option>
-          <option value="2">Reimbursed</option>
-          <option value="0">No Reimbursement</option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <button class="clear-filters-btn" @click="clearFilters">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-          Clear Filters
-        </button>
-      </div>
-    </div>
-
-    <!-- Stats Cards -->
-    <div class="stats-grid">
+    <!-- Summary -->
+    <section class="stats-grid" aria-label="Summary">
       <div class="stat-card">
-        <div class="stat-icon total">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="1" x2="12" y2="23"></line>
-            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-          </svg>
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">Total Expenses</span>
-          <span class="stat-value">₱{{ formatCurrency(totalExpenses) }}</span>
-        </div>
+        <span class="stat-label">{{ hasActiveFilters ? 'Total (filtered)' : 'Total spent' }}</span>
+        <span class="stat-value">₱{{ formatCurrency(totalExpenses) }}</span>
+        <span class="stat-hint">{{ filteredExpenses.length }} {{ filteredExpenses.length === 1 ? 'expense' : 'expenses' }}</span>
       </div>
-
       <div class="stat-card">
-        <div class="stat-icon success">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 3v18h18"></path>
-            <path d="m19 9-5 5-4-4-3 3"></path>
-          </svg>
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">Average Expense</span>
-          <span class="stat-value">₱{{ formatCurrency(averageExpense) }}</span>
-        </div>
+        <span class="stat-label">This month</span>
+        <span class="stat-value">₱{{ formatCurrency(thisMonthTotal) }}</span>
+        <span class="stat-hint">{{ currentMonthLabel }}</span>
       </div>
-
       <div class="stat-card">
-        <div class="stat-icon warning">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7"></rect>
-            <rect x="14" y="3" width="7" height="7"></rect>
-            <rect x="14" y="14" width="7" height="7"></rect>
-            <rect x="3" y="14" width="7" height="7"></rect>
-          </svg>
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">Total Categories</span>
-          <span class="stat-value">{{ totalCategories }}</span>
-        </div>
+        <span class="stat-label">Average expense</span>
+        <span class="stat-value">₱{{ formatCurrency(averageExpense) }}</span>
+        <span class="stat-hint">{{ totalCategories }} {{ totalCategories === 1 ? 'category' : 'categories' }}</span>
       </div>
+      <button
+        type="button"
+        class="stat-card stat-card--action"
+        :class="{ active: selectedReimburseStatus === '1', attention: pendingReimburse.count > 0 }"
+        @click="toggleReimburseFilter"
+      >
+        <span class="stat-label">Awaiting reimbursement</span>
+        <span class="stat-value">₱{{ formatCurrency(pendingReimburse.total) }}</span>
+        <span class="stat-hint">
+          {{ pendingReimburse.count }} unpaid ·
+          {{ selectedReimburseStatus === '1' ? 'showing only these' : 'click to view' }}
+        </span>
+      </button>
+    </section>
 
-      <div class="stat-card">
-        <div class="stat-icon danger">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">This Month</span>
-          <span class="stat-value">₱{{ formatCurrency(thisMonthTotal) }}</span>
-        </div>
-      </div>
-    </div>
+    <p v-if="actionError" class="banner-error" role="alert">
+      {{ actionError }}
+      <button class="banner-dismiss" @click="actionError = ''" aria-label="Dismiss">×</button>
+    </p>
 
-    <!-- Expenses Table -->
-    <div class="table-container">
-      <div v-if="isLoading" class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading expense data...</p>
-      </div>
-
-      <div v-else-if="error" class="error-state">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        <p>{{ error }}</p>
-      </div>
-
-      <div v-else-if="filteredExpenses.length === 0" class="empty-state">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-        </svg>
-        <h3>No expenses found</h3>
-        <p>Try adjusting your search or filters</p>
-      </div>
-
-      <table v-else class="expenses-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Category</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Supplier</th>
-            <th>Paid By</th>
-            <th>Reimburse</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="expense in filteredExpenses" :key="expense.id" class="table-row">
-            <td>
-              <div class="date-cell">
-                {{ formatDate(expense.expense_date) }}
-              </div>
-            </td>
-            
-            <td>
-              <span class="category-badge" :class="getCategoryClass(expense.category)">
-                {{ expense.category }}
-              </span>
-            </td>
-            
-            <td>
-              <div class="description-cell">
-                {{ expense.description }}
-              </div>
-            </td>
-            
-            <td>
-              <div class="amount-cell">
-                ₱{{ formatCurrency(expense.amount) }}
-              </div>
-            </td>
-            
-            <td>
-              <span class="supplier-text">{{ expense.supplier_id || 'N/A' }}</span>
-            </td>
-            
-            <td>
-              <span class="paid-by-text">{{ expense.paid_by || 'N/A' }}</span>
-            </td>
-            
-            <td>
-              <span v-if="expense.reimburse_status === 1" class="reimburse-badge needs-reimburse">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                Needs Reimbursement
-              </span>
-              <span v-else-if="expense.reimburse_status === 2" class="reimburse-badge reimbursed">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-                Reimbursed
-              </span>
-              <span v-else class="reimburse-badge no-reimburse">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                No Reimbursement
-              </span>
-            </td>
-            
-            <td>
-              <div class="action-buttons">
-                <button 
-                  class="action-btn edit" 
-                  @click="openEditModal(expense)"
-                  aria-label="Edit expense"
-                  title="Edit"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                </button>
-                <button 
-                  class="action-btn delete" 
-                  @click="deleteExpense(expense)"
-                  aria-label="Delete expense"
-                  title="Delete"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3,6 5,6 21,6"></polyline>
-                    <path d="M19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
-                  </svg>
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Category Breakdown Section -->
-    <div v-if="expenses.length > 0" class="category-breakdown">
-      <h2>Expenses by Category</h2>
-      <div class="category-list">
-        <div 
-          v-for="(amount, category) in expensesByCategory" 
-          :key="category" 
-          class="category-item"
-        >
-          <div class="category-info">
-            <span class="category-badge" :class="getCategoryClass(category)">
-              {{ category }}
-            </span>
-            <div class="category-stats">
-              <span class="category-amount">₱{{ formatCurrency(amount) }}</span>
-              <span class="category-percentage">{{ calculatePercentage(category) }}%</span>
-            </div>
+    <div class="content-grid">
+      <!-- Table card -->
+      <section class="card table-card">
+        <div class="toolbar">
+          <div class="search-container">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input
+              type="search"
+              class="search-input"
+              placeholder="Search description, category, payer…"
+              v-model="searchQuery"
+            />
           </div>
-          <div class="category-progress">
-            <div 
-              class="category-progress-bar" 
-              :class="getCategoryClass(category)"
-              :style="{ width: calculatePercentage(category) + '%' }"
-            ></div>
+
+          <select v-model="selectedCategory" class="control" aria-label="Category" :class="{ 'is-set': selectedCategory }">
+            <option value="">All categories</option>
+            <option v-for="cat in EXPENSE_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+          </select>
+
+          <select
+            v-model="selectedReimburseStatus"
+            class="control"
+            data-testid="reimburse-select"
+            aria-label="Reimbursement status"
+            :class="{ 'is-set': selectedReimburseStatus !== '' }"
+          >
+            <option value="">Any status</option>
+            <option value="1">Needs reimbursement</option>
+            <option value="2">Reimbursed</option>
+            <option value="0">No reimbursement</option>
+          </select>
+
+          <div class="date-range" :class="{ 'is-set': startDate || endDate }">
+            <input type="date" v-model="startDate" aria-label="From date" />
+            <span class="date-sep">to</span>
+            <input type="date" v-model="endDate" aria-label="To date" />
           </div>
+
+          <button v-if="hasActiveFilters" class="clear-filters-btn" @click="clearFilters">
+            Clear filters
+          </button>
         </div>
-      </div>
+
+        <div v-if="isLoading" class="state">
+          <div class="spinner"></div>
+          <p>Loading expenses…</p>
+        </div>
+
+        <div v-else-if="error" class="state state--error">
+          <p>{{ error }}</p>
+          <button class="btn-secondary" @click="loadExpenses()">Try again</button>
+        </div>
+
+        <div v-else-if="filteredExpenses.length === 0" class="state">
+          <template v-if="expenses.length === 0">
+            <h3>No expenses yet</h3>
+            <p>Log your first one. It takes a few seconds.</p>
+            <button class="btn-primary" @click="openAddModal">Add expense</button>
+          </template>
+          <template v-else>
+            <h3>No matching expenses</h3>
+            <p>Nothing fits these filters.</p>
+            <button class="btn-secondary" @click="clearFilters">Clear filters</button>
+          </template>
+        </div>
+
+        <div v-else class="table-scroll">
+          <table class="expenses-table">
+            <thead>
+              <tr>
+                <th class="col-date">Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Paid by</th>
+                <th>Status</th>
+                <th class="col-amount">Amount</th>
+                <th class="col-actions"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="expense in filteredExpenses"
+                :key="expense.id"
+                class="table-row"
+                tabindex="0"
+                @click="openEditModal(expense)"
+                @keydown.enter.self="openEditModal(expense)"
+              >
+                <td class="col-date">{{ formatDate(expense.expense_date) }}</td>
+                <td class="description-cell">
+                  <span class="description-text" :title="expense.description">{{ expense.description }}</span>
+                  <span v-if="expense.supplier_id" class="supplier-text">{{ expense.supplier_id }}</span>
+                </td>
+                <td>
+                  <span class="category-tag" :style="{ '--cat': categoryColor(expense.category) }">
+                    {{ expense.category }}
+                  </span>
+                </td>
+                <td class="muted-cell">{{ expense.paid_by || '—' }}</td>
+                <td>
+                  <span v-if="expense.reimburse_status === 1" class="status status--due">Needs reimbursement</span>
+                  <span v-else-if="expense.reimburse_status === 2" class="status status--done">Reimbursed</span>
+                  <span v-else class="status status--none">—</span>
+                </td>
+                <td class="col-amount amount-cell">₱{{ formatCurrency(expense.amount) }}</td>
+                <td class="col-actions" @click.stop>
+                  <div class="action-buttons">
+                    <button
+                      v-if="expense.reimburse_status === 1"
+                      class="mark-paid-btn"
+                      :disabled="markingId === expense.id"
+                      @click="markReimbursed(expense)"
+                      title="Mark as reimbursed"
+                    >
+                      Mark paid
+                    </button>
+                    <button class="action-btn" @click="openEditModal(expense)" aria-label="Edit expense" title="Edit">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                      </svg>
+                    </button>
+                    <button class="action-btn action-btn--danger" @click="deleteExpense(expense)" aria-label="Delete expense" title="Delete">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Category breakdown -->
+      <aside v-if="categoryRows.length > 0" class="card breakdown-card">
+        <h2>By category</h2>
+        <ul class="category-list">
+          <li v-for="row in categoryRows" :key="row.category">
+            <button
+              type="button"
+              class="category-row"
+              :class="{ active: selectedCategory === row.category }"
+              @click="selectedCategory = selectedCategory === row.category ? '' : row.category"
+            >
+              <span class="category-row-top">
+                <span class="dot" :style="{ background: categoryColor(row.category) }"></span>
+                <span class="category-name">{{ row.category }}</span>
+                <span class="category-amount">₱{{ formatCurrency(row.amount) }}</span>
+              </span>
+              <span class="category-progress">
+                <span
+                  class="category-progress-bar"
+                  :style="{ width: row.percent + '%', background: categoryColor(row.category) }"
+                ></span>
+              </span>
+              <span class="category-percentage">{{ row.percent.toFixed(1) }}%</span>
+            </button>
+          </li>
+        </ul>
+      </aside>
     </div>
 
-    <!-- Expense Modal -->
     <ExpenseModal
       :is-open="isModalOpen"
       :is-edit-mode="isEditMode"
       :initial-data="editingExpense"
+      :history="expenses"
+      :save="saveExpense"
+      :remove="editingExpense ? removeEditingExpense : null"
       @close="closeModal"
-      @submit="handleSubmit"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import ExpenseModal from './ExpenseModal.vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import ExpenseModal, { type ExpenseFormData } from './ExpenseModal.vue'
 import { expenseService } from '../services/expenseService'
-import type { Expense } from '../models/Expense'
+import {
+  EXPENSE_CATEGORIES,
+  EXPENSE_CATEGORY_COLORS,
+  type Expense,
+  type ExpenseCategory,
+} from '../models/Expense'
 import {
   calculateTotalExpenses,
   calculateExpensesByCategory,
   calculateAverageExpense,
-  calculateCategoryPercentage,
-  filterExpensesByDateRange
 } from '../modules/expenses/expenseUtils'
+
+type EditingExpense = ExpenseFormData & { id: string }
 
 const expenses = ref<Expense[]>([])
 const isLoading = ref(true)
 const error = ref('')
+const actionError = ref('')
 const searchQuery = ref('')
 const selectedCategory = ref('')
 const selectedReimburseStatus = ref('')
@@ -329,64 +261,82 @@ const startDate = ref('')
 const endDate = ref('')
 const isModalOpen = ref(false)
 const isEditMode = ref(false)
-const editingExpense = ref<any>(null)
+const editingExpense = ref<EditingExpense | null>(null)
+const markingId = ref<string | null>(null)
 
-const loadExpenses = async () => {
+// `silent` refreshes without swapping the table for a spinner.
+const loadExpenses = async (silent = false) => {
   try {
-    isLoading.value = true
+    if (!silent) isLoading.value = true
     error.value = ''
-    const data = await expenseService.getAll()
-    expenses.value = data
+    expenses.value = await expenseService.getAll()
   } catch (err) {
-    error.value = 'Failed to load expenses. Please try again.'
     console.error('Error loading expenses:', err)
+    if (silent) actionError.value = 'Saved, but the list could not refresh. Reload the page to see it.'
+    else error.value = 'Failed to load expenses.'
   } finally {
     isLoading.value = false
   }
 }
 
+const dateOnly = (d: string) => (d || '').slice(0, 10)
+
 const filteredExpenses = computed(() => {
-  let filtered = [...expenses.value]
+  const query = searchQuery.value.trim().toLowerCase()
+  const status = selectedReimburseStatus.value === '' ? null : Number(selectedReimburseStatus.value)
 
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    filtered = filtered.filter(expense => 
-      (expense.description && expense.description.toLowerCase().includes(query)) ||
-      (expense.category && expense.category.toLowerCase().includes(query)) ||
-      (expense.paid_by && expense.paid_by.toLowerCase().includes(query))
-    )
-  }
-
-  if (selectedCategory.value) {
-    filtered = filtered.filter(expense => expense.category === selectedCategory.value)
-  }
-
-  if (startDate.value && endDate.value) {
-    filtered = filterExpensesByDateRange(filtered, startDate.value, endDate.value)
-  }
-
-  if (selectedReimburseStatus.value !== '') {
-    const status = Number(selectedReimburseStatus.value)
-    filtered = filtered.filter(expense => Number(expense.reimburse_status) === status)
-  }
-
-  return filtered.sort((a, b) => 
-    new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime()
-  )
+  return expenses.value
+    .filter(e => {
+      if (query) {
+        const hit =
+          e.description?.toLowerCase().includes(query) ||
+          e.category?.toLowerCase().includes(query) ||
+          e.paid_by?.toLowerCase().includes(query) ||
+          e.supplier_id?.toLowerCase().includes(query)
+        if (!hit) return false
+      }
+      if (selectedCategory.value && e.category !== selectedCategory.value) return false
+      const d = dateOnly(e.expense_date)
+      if (startDate.value && d < startDate.value) return false
+      if (endDate.value && d > endDate.value) return false
+      if (status !== null && Number(e.reimburse_status ?? 0) !== status) return false
+      return true
+    })
+    .sort((a, b) => dateOnly(b.expense_date).localeCompare(dateOnly(a.expense_date)))
 })
+
+const hasActiveFilters = computed(() =>
+  Boolean(searchQuery.value || selectedCategory.value || selectedReimburseStatus.value !== '' || startDate.value || endDate.value)
+)
 
 const totalExpenses = computed(() => calculateTotalExpenses(filteredExpenses.value))
 const averageExpense = computed(() => calculateAverageExpense(filteredExpenses.value))
 const expensesByCategory = computed(() => calculateExpensesByCategory(filteredExpenses.value))
 const totalCategories = computed(() => Object.keys(expensesByCategory.value).length)
 
-const thisMonthTotal = computed(() => {
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0] as string
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0] as string
-  const monthExpenses = filterExpensesByDateRange(expenses.value, startOfMonth, endOfMonth)
-  return calculateTotalExpenses(monthExpenses)
+const categoryRows = computed(() => {
+  const total = totalExpenses.value
+  return Object.entries(expensesByCategory.value)
+    .map(([category, amount]) => ({ category, amount, percent: total ? (amount / total) * 100 : 0 }))
+    .sort((a, b) => b.amount - a.amount)
 })
+
+const now = new Date()
+const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+const currentMonthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+const thisMonthTotal = computed(() =>
+  calculateTotalExpenses(expenses.value.filter(e => dateOnly(e.expense_date).startsWith(monthPrefix)))
+)
+
+const pendingReimburse = computed(() => {
+  const due = expenses.value.filter(e => Number(e.reimburse_status) === 1)
+  return { count: due.length, total: calculateTotalExpenses(due) }
+})
+
+const toggleReimburseFilter = () => {
+  selectedReimburseStatus.value = selectedReimburseStatus.value === '1' ? '' : '1'
+}
 
 const openAddModal = () => {
   isEditMode.value = false
@@ -398,13 +348,13 @@ const openEditModal = (expense: Expense) => {
   isEditMode.value = true
   editingExpense.value = {
     id: expense.id,
-    expense_date: expense.expense_date,
+    expense_date: dateOnly(expense.expense_date),
     category: expense.category,
     description: expense.description,
     amount: expense.amount,
     supplier_id: expense.supplier_id || '',
     paid_by: expense.paid_by || '',
-    reimburse_status: expense.reimburse_status || 0
+    reimburse_status: expense.reimburse_status || 0,
   }
   isModalOpen.value = true
 }
@@ -415,86 +365,82 @@ const closeModal = () => {
   editingExpense.value = null
 }
 
-const handleSubmit = async (formData: any) => {
-  try {
-    if (isEditMode.value && editingExpense.value) {
-      await expenseService.updateExpense({
-        id: editingExpense.value.id,
-        date: formData.expense_date,
-        category: formData.category,
-        description: formData.description,
-        amount: formData.amount,
-        supplier_id: formData.supplier_id,
-        paid_by: formData.paid_by,
-        reimburse_status: formData.reimburse_status
-      })
-    } else {
-      await expenseService.addExpense({
-        date: formData.expense_date,
-        category: formData.category,
-        description: formData.description,
-        amount: formData.amount,
-        supplier_id: formData.supplier_id,
-        paid_by: formData.paid_by,
-        reimburse_status: formData.reimburse_status
-      })
-    }
-    
-    await loadExpenses()
-    closeModal()
-  } catch (err) {
-    console.error('Error saving expense:', err)
-    error.value = 'Failed to save expense. Please try again.'
+const toServicePayload = (data: ExpenseFormData) => ({
+  date: data.expense_date,
+  category: data.category,
+  description: data.description,
+  amount: data.amount,
+  supplier_id: data.supplier_id,
+  paid_by: data.paid_by,
+  reimburse_status: data.reimburse_status,
+})
+
+// The modal awaits this, shows its own saving/error state, and decides whether to close.
+const saveExpense = async (data: ExpenseFormData) => {
+  if (isEditMode.value && editingExpense.value) {
+    await expenseService.updateExpense({ id: editingExpense.value.id, ...toServicePayload(data) })
+  } else {
+    await expenseService.addExpense(toServicePayload(data))
   }
+  await loadExpenses(true)
+}
+
+const removeEditingExpense = async () => {
+  if (!editingExpense.value) return
+  await expenseService.deleteExpense(editingExpense.value.id)
+  await loadExpenses(true)
 }
 
 const deleteExpense = async (expense: Expense) => {
-  if (!confirm(`Are you sure you want to delete this expense: "${expense.description}"?`)) {
-    return
-  }
-
+  if (!confirm(`Delete "${expense.description}"? This can't be undone.`)) return
   try {
     await expenseService.deleteExpense(expense.id)
-    await loadExpenses()
+    expenses.value = expenses.value.filter(e => e.id !== expense.id)
   } catch (err) {
     console.error('Error deleting expense:', err)
-    error.value = 'Failed to delete expense. Please try again.'
+    actionError.value = 'Could not delete that expense. Try again.'
   }
 }
 
-const formatCurrency = (value: number): string => {
-  return value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+// One-click status change for the most common edit.
+const markReimbursed = async (expense: Expense) => {
+  markingId.value = expense.id
+  try {
+    await expenseService.updateExpense({
+      id: expense.id,
+      date: dateOnly(expense.expense_date),
+      category: expense.category,
+      description: expense.description,
+      amount: expense.amount,
+      supplier_id: expense.supplier_id,
+      paid_by: expense.paid_by,
+      reimburse_status: 2,
+    })
+    expense.reimburse_status = 2
+  } catch (err) {
+    console.error('Error updating expense:', err)
+    actionError.value = 'Could not mark that expense as reimbursed. Try again.'
+  } finally {
+    markingId.value = null
+  }
 }
 
+const formatCurrency = (value: number): string =>
+  (value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 const formatDate = (dateString: string): string => {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
+  const [y, m, d] = dateOnly(dateString).split('-').map(Number)
+  if (!y || !m || !d) return dateString
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(y !== now.getFullYear() ? { year: 'numeric' } : {}),
   })
 }
 
-const getCategoryClass = (category: string): string => {
-  const classes: Record<string, string> = {
-    'Supplies': 'category-supplies',
-    'Gas': 'category-gas',
-    'Misc': 'category-misc',
-    'Maintenance': 'category-maintenance',
-    'Equipment': 'category-equipment',
-    'Ingredients': 'category-ingredients',
-    'Utilities': 'category-utilities',
-    'Labor': 'category-labor',
-    'Machinery': 'category-machinery',
-    'Government Fees': 'category-government-fees',
-    'Other': 'category-other'
-  }
-  return classes[category] || 'category-default'
-}
-
-const calculatePercentage = (category: string): string => {
-  return calculateCategoryPercentage(filteredExpenses.value, category).toFixed(1)
-}
+const categoryColor = (category: string) =>
+  EXPENSE_CATEGORY_COLORS[category as ExpenseCategory] ?? '#64748b'
 
 const clearFilters = () => {
   searchQuery.value = ''
@@ -504,564 +450,422 @@ const clearFilters = () => {
   endDate.value = ''
 }
 
+// "N" opens the add form, unless the user is typing somewhere.
+const onGlobalKeydown = (e: KeyboardEvent) => {
+  if (e.key !== 'n' && e.key !== 'N') return
+  if (e.metaKey || e.ctrlKey || e.altKey || isModalOpen.value) return
+  const t = e.target as HTMLElement | null
+  if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
+  e.preventDefault()
+  openAddModal()
+}
+
 onMounted(() => {
   loadExpenses()
+  window.addEventListener('keydown', onGlobalKeydown)
 })
+onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 
 <style scoped>
 .expenses-page {
-  padding: 0;
+  --primary: #5a67d8;
+  --primary-hover: #4c51bf;
+  --primary-soft: #eef0ff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --subtle: #9ca3af;
+  --border: #e5e7eb;
+  --surface: #ffffff;
+  --row-hover: #f9fafb;
+
+  color: var(--text);
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Header */
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 20px;
 }
-
-.header-text h1 {
-  margin: 0 0 0.25rem 0;
-  font-size: 2rem;
-  color: #212529;
-  font-weight: 700;
-}
-
-.header-text p {
+.page-header h1 {
   margin: 0;
-  color: #6c757d;
-  font-size: 0.95rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
+.subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
 
-.btn-primary {
-  display: flex;
+/* Buttons */
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 0.95rem;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
 }
+.btn-primary { background: var(--primary); color: #fff; border: 1px solid var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-secondary { background: #fff; color: #374151; border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--row-hover); }
 
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-}
-
+/* Summary */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
-
 .stat-card {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  transition: all 0.2s;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-}
-
-.stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.stat-icon.total {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.stat-icon.success {
-  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-  color: white;
-}
-
-.stat-icon.warning {
-  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-  color: white;
-}
-
-.stat-icon.danger {
-  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-  color: white;
-}
-
-.stat-content {
-  flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-.stat-label {
-  font-size: 0.85rem;
-  color: #6c757d;
-  margin-bottom: 0.25rem;
-}
-
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #212529;
-}
-
-.filters-section {
-  display: flex;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-  align-items: end;
-}
-
-.search-container {
-  position: relative;
-  flex: 1;
-  min-width: 250px;
-  max-width: 500px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #6c757d;
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  padding: 12px 12px 12px 42px;
-  border: 2px solid #e9ecef;
-  border-radius: 10px;
-  font-size: 0.95rem;
-  transition: all 0.2s;
-  background: white;
-  box-sizing: border-box;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 150px;
-}
-
-.filter-label {
-  font-size: 0.85rem;
-  color: #495057;
-  font-weight: 600;
-}
-
-.filter-select,
-.filter-input {
-  padding: 12px 14px;
-  border: 2px solid #e9ecef;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-select:focus,
-.filter-input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.date-input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.date-input {
-  padding-right: 40px;
-  width: 100%;
-}
-
-.date-icon {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #6c757d;
-  pointer-events: none;
-}
-
-.clear-filters-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #f8f9fa;
-  border: 2px solid #e9ecef;
-  border-radius: 10px;
-  color: #6c757d;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-top: 20px;
-  justify-content: end;
-}
-
-.clear-filters-btn:hover {
-  background: #e9ecef;
-  border-color: #dee2e6;
-  color: #495057;
-}
-
-.clear-filters-btn:active {
-  transform: translateY(1px);
-}
-
-.table-container {
-  background: white;
+  gap: 2px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  margin-bottom: 2rem;
-}
-
-.loading-state,
-.error-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  color: #6c757d;
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid #f3f4f6;
-  border-top-color: #667eea;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.error-state svg {
-  color: #dc3545;
-  margin-bottom: 1rem;
-}
-
-.empty-state svg {
-  color: #adb5bd;
-  margin-bottom: 1rem;
-}
-
-.empty-state h3 {
-  margin: 0.5rem 0 0.25rem 0;
-  color: #495057;
-}
-
-.expenses-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.expenses-table thead {
-  background: #f8f9fa;
-}
-
-.expenses-table th {
-  padding: 1rem;
   text-align: left;
-  font-size: 0.85rem;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+.stat-card--action { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.stat-card--action:hover { border-color: #c7cbe0; }
+.stat-card--action.attention .stat-value { color: #b45309; }
+.stat-card--action.active { border-color: var(--primary); background: var(--primary-soft); }
+.stat-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.stat-value {
+  font-size: 1.4rem;
   font-weight: 700;
-  color: #495057;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #e9ecef;
-}
-
-.table-row {
-  border-bottom: 1px solid #f1f3f5;
-  transition: background-color 0.2s;
-}
-
-.table-row:hover {
-  background-color: #f8f9fa;
-}
-
-.table-row td {
-  padding: 1rem;
-  font-size: 0.95rem;
-  color: #495057;
-}
-
-.date-cell {
-  font-weight: 600;
-  color: #212529;
-}
-
-.category-badge {
-  display: inline-block;
-  padding: 0.35rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.category-supplies { background: #e3f2fd; color: #1976d2; }
-.category-gas { background: #fff3e0; color: #f57c00; }
-.category-misc { background: #f3e5f5; color: #7b1fa2; }
-.category-maintenance { background: #e8f5e9; color: #388e3c; }
-.category-equipment { background: #fce4ec; color: #c2185b; }
-.category-ingredients { background: #fff9c4; color: #f9a825; }
-.category-utilities { background: #e0f2f1; color: #00796b; }
-.category-labor { background: #e8eaf6; color: #3949ab; }
-.category-machinery { background: #efebe9; color: #6d4c41; }
-.category-government-fees { background: #fbe9e7; color: #d84315; }
-.category-other { background: #eceff1; color: #546e7a; }
-.category-default { background: #f5f5f5; color: #616161; }
-
-.description-cell {
-  max-width: 300px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.stat-hint { font-size: 0.75rem; color: var(--subtle); }
 
-.amount-cell {
-  font-weight: 700;
-  color: #dc3545;
-  font-size: 1.05rem;
-}
-
-.supplier-text {
-  color: #6c757d;
-  font-size: 0.9rem;
-}
-
-.paid-by-text {
-  color: #495057;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.reimburse-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.reimburse-badge.needs-reimburse {
-  background: #ffebee;
-  color: #c62828;
-}
-
-.reimburse-badge.no-reimburse {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.reimburse-badge.reimbursed {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.action-buttons {
+.banner-error {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.88rem;
 }
-
-.action-btn {
-  padding: 8px;
-  background: none;
+.banner-dismiss {
   border: none;
-  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
   cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.action-btn.edit {
-  color: #667eea;
-}
-
-.action-btn.edit:hover {
-  background: #f0f3ff;
-}
-
-.action-btn.delete {
-  color: #dc3545;
-}
-
-.action-btn.delete:hover {
-  background: #ffebee;
-}
-
-.category-breakdown {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  padding: 1.5rem;
-}
-
-.category-breakdown h2 {
-  margin: 0 0 1.5rem 0;
-  font-size: 1.3rem;
-  color: #212529;
-}
-
-.category-list {
+/* Layout */
+.content-grid {
   display: grid;
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: start;
 }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.table-card { overflow: hidden; }
+.content-grid > .table-card:only-child { grid-column: 1 / -1; }
 
-.category-item {
+/* Toolbar */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.search-container { position: relative; flex: 1 1 220px; min-width: 180px; }
+.search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--subtle);
+  pointer-events: none;
+}
+.search-input,
+.control,
+.date-range {
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-input { width: 100%; padding: 0 10px 0 32px; }
+.control { padding: 0 8px; cursor: pointer; }
+.search-input:focus,
+.control:focus,
+.date-range:focus-within {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.15);
+}
+.control.is-set,
+.date-range.is-set { border-color: var(--primary); background: var(--primary-soft); }
+
+.date-range { display: inline-flex; align-items: center; padding: 0 6px; gap: 2px; }
+.date-range input {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  outline: none;
+  width: 122px;
+}
+.date-sep { color: var(--subtle); font-size: 0.8rem; }
+
+.clear-filters-btn {
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.clear-filters-btn:hover { background: var(--primary-soft); }
+
+/* States */
+.state {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-}
-
-.category-info {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 6px;
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--muted);
 }
-
-.category-stats {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
+.state h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.state p { margin: 0 0 8px; font-size: 0.88rem; }
+.state--error { color: #b91c1c; }
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #eef0f4;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 8px;
 }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.category-amount {
-  font-weight: 700;
-  color: #212529;
-  font-size: 1.1rem;
-}
-
-.category-percentage {
-  font-size: 0.9rem;
-  color: #6c757d;
+/* Table */
+.table-scroll { overflow-x: auto; }
+.expenses-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.expenses-table th {
+  position: sticky;
+  top: 0;
+  background: #fafafa;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 0.72rem;
   font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
+.expenses-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.table-row { cursor: pointer; transition: background 0.1s; }
+.table-row:hover,
+.table-row:focus-visible { background: var(--row-hover); outline: none; }
+.table-row:last-child td { border-bottom: none; }
 
-.category-progress {
-  height: 8px;
-  background: #f1f3f5;
-  border-radius: 4px;
+.col-date { white-space: nowrap; color: var(--muted); width: 1%; }
+.col-amount { text-align: right !important; white-space: nowrap; }
+.col-actions { width: 1%; white-space: nowrap; }
+
+.description-cell { max-width: 320px; }
+.description-text {
+  display: block;
+  font-weight: 500;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.supplier-text { display: block; font-size: 0.75rem; color: var(--subtle); }
+.muted-cell { color: var(--muted); white-space: nowrap; }
+
+.amount-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.category-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+}
+.category-tag::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cat);
+  flex-shrink: 0;
 }
 
-.category-progress-bar {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
+.status { font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.status--due {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+}
+.status--done {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+}
+.status--none { color: #d1d5db; font-weight: 400; }
+
+.action-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.action-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.table-row:hover .action-btn,
+.table-row:focus-within .action-btn { opacity: 1; }
+.action-btn:hover { background: #f3f4f6; color: var(--text); }
+.action-btn--danger:hover { background: #fef2f2; color: #dc2626; }
+
+.mark-paid-btn {
+  height: 28px;
+  padding: 0 10px;
+  margin-right: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #166534;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mark-paid-btn:hover:not(:disabled) { border-color: #86efac; background: #f0fdf4; }
+.mark-paid-btn:disabled { opacity: 0.5; cursor: wait; }
+
+/* Breakdown */
+.breakdown-card { padding: 16px; position: sticky; top: 16px; }
+.breakdown-card h2 {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.category-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.category-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.category-row:hover { background: var(--row-hover); }
+.category-row.active { background: var(--primary-soft); border-color: #c7cdf5; }
+.category-row-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.category-name { flex: 1; font-size: 0.85rem; font-weight: 500; }
+.category-amount { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.category-progress { height: 4px; background: #f3f4f6; border-radius: 2px; overflow: hidden; }
+.category-progress-bar { display: block; height: 100%; border-radius: 2px; transition: width 0.3s ease; }
+.category-percentage { font-size: 0.72rem; color: var(--subtle); font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; }
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .content-grid { grid-template-columns: 1fr; }
+  .breakdown-card { position: static; }
+  .category-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
 }
 
-.category-progress-bar.category-supplies { background: #1976d2; }
-.category-progress-bar.category-gas { background: #f57c00; }
-.category-progress-bar.category-misc { background: #7b1fa2; }
-.category-progress-bar.category-maintenance { background: #388e3c; }
-.category-progress-bar.category-equipment { background: #c2185b; }
-.category-progress-bar.category-ingredients { background: #f9a825; }
-.category-progress-bar.category-utilities { background: #00796b; }
-.category-progress-bar.category-labor { background: #3949ab; }
-.category-progress-bar.category-machinery { background: #6d4c41; }
-.category-progress-bar.category-government-fees { background: #d84315; }
-.category-progress-bar.category-other { background: #546e7a; }
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
-@media (max-width: 480px) {
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
+@media (max-width: 600px) {
+  .page-header { flex-direction: column; align-items: stretch; }
+  .page-header h1 { font-size: 1.35rem; }
+  .stat-value { font-size: 1.15rem; }
+  .stat-card { padding: 12px 14px; }
+  .toolbar > * { flex: 1 1 100%; }
+  .date-range input { width: auto; flex: 1; min-width: 0; }
+  .action-btn { opacity: 1; }
+  .expenses-table { min-width: 720px; }
+}
 
-  .header-text h1 {
-    font-size: 1.5rem;
-  }
-
-  .btn-primary {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-
-  .filters-section {
-    flex-direction: column;
-  }
-
-  .search-container {
-    min-width: 100%;
-    max-width: none;
-  }
-
-  .filter-group {
-    width: 100%;
-  }
-
-  .clear-filters-btn {
-    width: 100%;
-    justify-content: center;
-    margin-top: 0;
-  }
-
-  .table-container {
-    overflow-x: auto;
-  }
-
-  .expenses-table {
-    min-width: 800px;
-  }
-
-  .category-breakdown {
-    padding: 1rem;
-  }
+@media (hover: none) {
+  .action-btn { opacity: 1; }
 }
 </style>
-

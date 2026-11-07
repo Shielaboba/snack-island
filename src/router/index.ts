@@ -110,9 +110,29 @@ const routes = [
     meta: { requiresAuth: true, allowedRoles: [1] }
   },
   {
+    path: '/employee',
+    name: 'Employee',
+    component: () => import('../components/Employee.vue'),
+    meta: { requiresAuth: true, allowedRoles: [0, 2] },
+    redirect: '/employee/attendance',
+    children: [
+      {
+        path: 'attendance',
+        name: 'Attendance',
+        component: () => import('../components/Attendance.vue'),
+        meta: { requiresAuth: true, allowedRoles: [0, 2] }
+      },
+      {
+        path: 'staff',
+        name: 'Staff',
+        component: () => import('../components/StaffPage.vue'),
+        meta: { requiresAuth: true, allowedRoles: [0] }
+      }
+    ]
+  },
+  {
     path: '/attendance',
-    name: 'Attendance',
-    component: () => import('../components/Attendance.vue'),
+    redirect: '/employee/attendance',
     meta: { requiresAuth: true, allowedRoles: [0, 2] }
   }
 ]

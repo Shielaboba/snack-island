@@ -67,12 +67,12 @@ describe('Sidebar.vue ledger link', () => {
   })
 })
 
-describe('Sidebar.vue clock and attendance links', () => {
+describe('Sidebar.vue clock and employee links', () => {
   beforeEach(() => {
     vi.mocked(authService.getCurrentUser).mockReset()
   })
 
-  it('shows Clock for staff and hides Attendance', () => {
+  it('shows Clock for staff and hides Employee', () => {
     vi.mocked(authService.getCurrentUser).mockReturnValue({
       id: '3',
       username: 'staff',
@@ -80,30 +80,30 @@ describe('Sidebar.vue clock and attendance links', () => {
     } as any)
     const { el, app } = mountSidebar()
     expect(el.querySelector('a[href="/clock"]')?.textContent).toContain('Clock')
-    expect(el.querySelector('a[href="/attendance"]')).toBeNull()
+    expect(el.querySelector('a[href="/employee"]')).toBeNull()
     app.unmount()
   })
 
-  it('shows Attendance for admin and auditor, not Clock', () => {
+  it('shows Employee for admin, not Clock', () => {
     vi.mocked(authService.getCurrentUser).mockReturnValue({
       id: '1',
       username: 'admin',
       roleId: 0
     } as any)
     const { el, app } = mountSidebar()
-    expect(el.querySelector('a[href="/attendance"]')?.textContent).toContain('Attendance')
+    expect(el.querySelector('a[href="/employee"]')?.textContent).toContain('Employee')
     expect(el.querySelector('a[href="/clock"]')).toBeNull()
     app.unmount()
   })
 
-  it('shows Attendance for auditor', () => {
+  it('shows Employee for auditor', () => {
     vi.mocked(authService.getCurrentUser).mockReturnValue({
       id: '2',
       username: 'ana',
       roleId: 2
     } as any)
     const { el, app } = mountSidebar()
-    expect(el.querySelector('a[href="/attendance"]')).not.toBeNull()
+    expect(el.querySelector('a[href="/employee"]')).not.toBeNull()
     expect(el.querySelector('a[href="/clock"]')).toBeNull()
     app.unmount()
   })

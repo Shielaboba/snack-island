@@ -10,6 +10,7 @@ import {
 } from '../models/StaffClock'
 import { compressSelfie } from '../modules/staffClock/compressSelfie'
 import {
+  clockOutCoveringOvertime,
   findOverlappingShift,
   openShiftFor,
   validateClockIn,
@@ -298,20 +299,26 @@ export const staffClockService = {
   ): Promise<StaffClockShift> {
     const check = validateShiftTimes(input.clock_in_at, input.clock_out_at)
     if (!check.ok) throw new Error(check.message)
-    assertNoOverlap(input.staff_name, input.clock_in_at, input.clock_out_at, existing)
     const now = new Date().toISOString()
+    const otHours = Number(input.ot_hours) || 0
+    const hasOt = otHours > 0
+    const clockOutAt = clockOutCoveringOvertime(input.clock_in_at, input.clock_out_at, otHours)
+    assertNoOverlap(input.staff_name, input.clock_in_at, clockOutAt, existing)
     const { data, error } = await supabase
       .from(STAFF_CLOCK_TABLE)
       .insert({
         staff_name: input.staff_name,
         clock_in_at: input.clock_in_at,
-        clock_out_at: input.clock_out_at,
+        clock_out_at: clockOutAt,
         clock_in_photo_path: null,
         clock_out_photo_path: null,
         clock_in_status: 'approved',
         clock_out_status: 'approved',
         clock_in_override: true,
         clock_out_override: true,
+        ot_requested: hasOt,
+        ot_status: hasOt ? 'approved' : null,
+        ot_requested_at: hasOt ? now : null,
         created_by: actor,
         updated_by: actor,
         created_at: now,

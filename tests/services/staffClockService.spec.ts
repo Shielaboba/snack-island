@@ -309,9 +309,40 @@ describe('staffClockService approvals and overrides', () => {
         clock_in_override: true,
         clock_out_override: true,
         clock_in_photo_path: null,
-        clock_out_photo_path: null
+        clock_out_photo_path: null,
+        ot_requested: false,
+        ot_status: null
       })
     )
+    expect(mockInsert.mock.calls[0][0]).not.toHaveProperty('ot_hours')
+  })
+
+  it('saves typed overtime hours on a missed punch as approved OT', async () => {
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: [{ ...openShai, ot_requested: true, ot_status: 'approved', ot_hours: 2 }],
+      error: null
+    })
+    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect })
+    vi.mocked(supabase.from).mockReturnValue({ insert: mockInsert } as any)
+
+    await staffClockService.createMissedPunch(
+      {
+        staff_name: 'Den',
+        clock_in_at: '2026-11-04T06:00:00.000Z',
+        clock_out_at: '2026-11-04T14:00:00.000Z',
+        ot_hours: 2
+      },
+      [],
+      'ana'
+    )
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clock_out_at: '2026-11-04T16:00:00.000Z',
+        ot_requested: true,
+        ot_status: 'approved'
+      })
+    )
+    expect(mockInsert.mock.calls[0][0]).not.toHaveProperty('ot_hours')
   })
 
   it('staff OT request is pending and does not clock them out', async () => {

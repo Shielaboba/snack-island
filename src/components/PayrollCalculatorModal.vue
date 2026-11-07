@@ -11,7 +11,7 @@
           <div>
             <h2>Payroll Calculator</h2>
             <p class="modal-subtitle">
-              One closed session is 1 day. 2 hours OT is half of the daily rate.
+              One closed session is 1 day. Two overtime hours, including a clock-out from 11:30 PM to midnight, is half a day's pay. Longer overtime uses the daily rate per 8 hours.
             </p>
           </div>
           <button class="close-btn" type="button" aria-label="Close modal" @click="emit('close')">

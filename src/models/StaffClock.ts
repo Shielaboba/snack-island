@@ -31,6 +31,7 @@ export interface MissedPunchInput {
   staff_name: StaffName
   clock_in_at: string
   clock_out_at: string
+  ot_hours?: number
 }
 
 export interface ShiftTimePatch {

@@ -26,23 +26,42 @@
           >
             <option v-for="name in STAFF_NAMES" :key="name" :value="name">{{ name }}</option>
           </select>
-          <label class="field-label" for="clock-in-time">Clock in</label>
+          <span class="field-label">Clock in</span>
+          <div class="when">
+            <DateField v-model="form.clock_in_date" test-id="clock-in-date" aria-label="Clock in date" />
+            <input
+              id="clock-in-clock"
+              v-model="form.clock_in_clock"
+              type="time"
+              class="field-input"
+              data-testid="clock-in-clock"
+              aria-label="Clock in time"
+              required
+            />
+          </div>
+          <span class="field-label">Clock out</span>
+          <div class="when">
+            <DateField v-model="form.clock_out_date" test-id="clock-out-date" aria-label="Clock out date" />
+            <input
+              id="clock-out-clock"
+              v-model="form.clock_out_clock"
+              type="time"
+              class="field-input"
+              data-testid="clock-out-clock"
+              aria-label="Clock out time"
+              :required="mode === 'add'"
+            />
+          </div>
+          <label v-if="mode === 'add'" class="field-label" for="clock-ot-hours">Overtime hours</label>
           <input
-            id="clock-in-time"
-            v-model="form.clock_in_at"
-            type="datetime-local"
+            v-if="mode === 'add'"
+            id="clock-ot-hours"
+            v-model.number="form.ot_hours"
+            type="number"
+            min="0"
+            step="any"
             class="field-input"
-            data-testid="clock-in-time"
-            required
-          />
-          <label class="field-label" for="clock-out-time">Clock out</label>
-          <input
-            id="clock-out-time"
-            v-model="form.clock_out_at"
-            type="datetime-local"
-            class="field-input"
-            data-testid="clock-out-time"
-            :required="mode === 'add'"
+            data-testid="clock-ot-hours"
           />
           <div class="modal-footer">
             <button class="btn btn-secondary" type="button" @click="emit('close')">Cancel</button>
@@ -57,8 +76,11 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
 import { STAFF_NAMES, type StaffClockShift, type StaffName } from '../models/StaffClock'
+import DateField from './DateField.vue'
 import {
   fromManilaDateTimeLocal,
+  manilaToday,
+  missedPunchOtError,
   toManilaDateTimeLocal,
   validateShiftTimes
 } from '../modules/staffClock/staffClockUtils'
@@ -71,30 +93,45 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  submit: [payload: { staff_name: StaffName; clock_in_at: string; clock_out_at: string | null }]
+  submit: [payload: { staff_name: StaffName; clock_in_at: string; clock_out_at: string | null; ot_hours?: number }]
 }>()
 
 const form = reactive({
   staff_name: 'Shai' as StaffName,
-  clock_in_at: '',
-  clock_out_at: ''
+  clock_in_date: '',
+  clock_in_clock: '',
+  clock_out_date: '',
+  clock_out_clock: '',
+  ot_hours: 0
 })
 const localError = ref('')
+
+function splitLocal(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' }
+  const [date, time] = toManilaDateTimeLocal(iso).split('T')
+  return { date: date ?? '', time: time ?? '' }
+}
 
 function hydrate() {
   localError.value = ''
   if (props.mode === 'edit' && props.shift) {
     form.staff_name = props.shift.staff_name
-    form.clock_in_at = toManilaDateTimeLocal(props.shift.clock_in_at)
-    form.clock_out_at = props.shift.clock_out_at
-      ? toManilaDateTimeLocal(props.shift.clock_out_at)
-      : ''
+    const clockIn = splitLocal(props.shift.clock_in_at)
+    const clockOut = splitLocal(props.shift.clock_out_at)
+    form.clock_in_date = clockIn.date
+    form.clock_in_clock = clockIn.time
+    form.clock_out_date = clockOut.date
+    form.clock_out_clock = clockOut.time
+    form.ot_hours = 0
     return
   }
   form.staff_name = 'Shai'
-  const now = new Date()
-  form.clock_in_at = toManilaDateTimeLocal(now.toISOString())
-  form.clock_out_at = toManilaDateTimeLocal(new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString())
+  const today = manilaToday()
+  form.clock_in_date = today
+  form.clock_in_clock = '14:00'
+  form.clock_out_date = today
+  form.clock_out_clock = '22:00'
+  form.ot_hours = 0
 }
 
 watch(
@@ -108,8 +145,11 @@ watch(
 function submit() {
   localError.value = ''
   try {
-    const clockInAt = fromManilaDateTimeLocal(form.clock_in_at)
-    const clockOutAt = form.clock_out_at ? fromManilaDateTimeLocal(form.clock_out_at) : null
+    const clockInAt = fromManilaDateTimeLocal(`${form.clock_in_date}T${form.clock_in_clock}`)
+    const clockOutAt =
+      form.clock_out_date || form.clock_out_clock
+        ? fromManilaDateTimeLocal(`${form.clock_out_date}T${form.clock_out_clock}`)
+        : null
     if (props.mode === 'add' && !clockOutAt) {
       localError.value = 'Clock-out time is required for a missed punch.'
       return
@@ -119,10 +159,17 @@ function submit() {
       localError.value = check.message
       return
     }
+    const otHours = Number(form.ot_hours) || 0
+    const otError = props.mode === 'add' && clockOutAt ? missedPunchOtError(clockInAt, clockOutAt, otHours) : null
+    if (otError) {
+      localError.value = otError
+      return
+    }
     emit('submit', {
       staff_name: form.staff_name,
       clock_in_at: clockInAt,
-      clock_out_at: clockOutAt
+      clock_out_at: clockOutAt,
+      ...(props.mode === 'add' ? { ot_hours: otHours } : {})
     })
   } catch (err) {
     localError.value = err instanceof Error ? err.message : 'Enter valid times.'
@@ -166,6 +213,7 @@ function submit() {
   font-weight: 600;
   margin-bottom: 6px;
 }
+.when { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
 .field-input {
   width: 100%;
   box-sizing: border-box;
@@ -175,6 +223,7 @@ function submit() {
   border-radius: 10px;
   font-size: 0.95rem;
 }
+.when .field-input { width: auto; flex: 1; min-width: 0; margin-bottom: 0; }
 .modal-error {
   color: #dc3545;
   background: #fff5f5;

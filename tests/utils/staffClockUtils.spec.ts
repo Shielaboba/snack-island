@@ -19,6 +19,8 @@ import {
   canRequestOt,
   isEarlyClockIn,
   overtimeHours,
+  clockOutCoveringOvertime,
+  missedPunchOtError,
   recordedOvertimeHours,
   shouldPromptOtOnClockOut,
   validateRecordOt,
@@ -29,7 +31,8 @@ import {
   validateClockIn,
   validateClockOut,
   validateShiftTimes,
-  findOverlappingShift
+  findOverlappingShift,
+  reflectedPunch
 } from '../../src/modules/staffClock/staffClockUtils'
 
 function shift(partial: Partial<StaffClockShift>): StaffClockShift {
@@ -187,6 +190,46 @@ describe('hours and overtime', () => {
     })
     expect(overtimeHours(row)).toBe(2)
     expect(recordedOvertimeHours(row)).toBe(2)
+  })
+
+  it('extends a missed punch clock-out so the typed overtime hours are on the shift', () => {
+    expect(
+      clockOutCoveringOvertime('2026-11-04T06:00:00.000Z', '2026-11-04T14:00:00.000Z', 2)
+    ).toBe('2026-11-04T16:00:00.000Z')
+    expect(
+      clockOutCoveringOvertime('2026-11-04T06:00:00.000Z', '2026-11-04T18:00:00.000Z', 2)
+    ).toBe('2026-11-04T18:00:00.000Z')
+    expect(
+      clockOutCoveringOvertime('2026-11-04T06:00:00.000Z', '2026-11-04T14:00:00.000Z', 0)
+    ).toBe('2026-11-04T14:00:00.000Z')
+  })
+
+  it('counts a requested clock-out from 11:30 PM through midnight as the 2-hour half-pay block', () => {
+    const half = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T15:30:00.000Z',
+      clock_out_status: 'approved',
+      ot_requested: true,
+      ot_status: 'pending'
+    })
+    expect(shiftHours(half)).toBe(9.5)
+    expect(recordedOvertimeHours(half)).toBe(2)
+    const lateStart = shift({
+      clock_in_at: '2026-11-04T06:20:00.000Z',
+      clock_out_at: '2026-11-04T16:00:00.000Z',
+      clock_out_status: 'approved',
+      ot_requested: true,
+      ot_status: 'approved'
+    })
+    expect(recordedOvertimeHours(lateStart)).toBe(2)
+    const beforeWindow = shift({
+      clock_in_at: '2026-11-04T06:00:00.000Z',
+      clock_out_at: '2026-11-04T15:29:00.000Z',
+      clock_out_status: 'approved',
+      ot_requested: true,
+      ot_status: 'pending'
+    })
+    expect(recordedOvertimeHours(beforeWindow)).toBeNull()
   })
 
   it('does not record OT under the 2-hour minimum or when declined', () => {
@@ -362,6 +405,83 @@ describe('typed times', () => {
   })
 })
 
+describe('reflected punch display', () => {
+  const earlyIn = '2026-11-04T04:00:00.000Z'
+  const lateOut = '2026-11-04T14:40:00.000Z'
+  const earlyOut = '2026-11-04T09:55:00.000Z'
+
+  it('shows 2:00 PM and 10:00 PM when there is no active OT and the punch is outside the shift', () => {
+    const view = reflectedPunch(
+      shift({
+        clock_in_at: earlyIn,
+        clock_out_at: lateOut,
+        clock_out_status: 'approved'
+      })
+    )
+    expect(view.inLabel).toMatch(/2:00\s?PM/i)
+    expect(view.outLabel).toMatch(/10:00\s?PM/i)
+    expect(view.inCaptured).toMatch(/12:00\s?PM/i)
+    expect(view.outCaptured).toMatch(/10:40\s?PM/i)
+    expect(view.hours).toBe(8)
+
+    const beforeTen = reflectedPunch(
+      shift({
+        clock_in_at: earlyIn,
+        clock_out_at: earlyOut,
+        clock_out_status: 'approved'
+      })
+    )
+    expect(beforeTen.inLabel).toMatch(/2:00\s?PM/i)
+    expect(beforeTen.outLabel).toMatch(/5:55\s?PM/i)
+    expect(beforeTen.outCaptured).toBeNull()
+    expect(beforeTen.hours).toBe(3.92)
+  })
+
+  it('keeps captured times while OT is waiting or approved, and reflects again when OT is declined', () => {
+    const waiting = reflectedPunch(
+      shift({
+        clock_in_at: earlyIn,
+        clock_out_at: lateOut,
+        clock_out_status: 'approved',
+        ot_requested: true,
+        ot_status: 'pending'
+      })
+    )
+    expect(waiting.inLabel).toMatch(/12:00\s?PM/i)
+    expect(waiting.outLabel).toMatch(/10:40\s?PM/i)
+    expect(waiting.inCaptured).toBeNull()
+    expect(waiting.hours).toBe(10.67)
+
+    const declined = reflectedPunch(
+      shift({
+        clock_in_at: earlyIn,
+        clock_out_at: lateOut,
+        clock_out_status: 'approved',
+        ot_requested: true,
+        ot_status: 'declined'
+      })
+    )
+    expect(declined.inLabel).toMatch(/2:00\s?PM/i)
+    expect(declined.outLabel).toMatch(/10:00\s?PM/i)
+    expect(declined.hours).toBe(8)
+  })
+
+  it('leaves an on-time clock-in unchanged', () => {
+    const view = reflectedPunch(
+      shift({
+        clock_in_at: '2026-11-04T06:00:00.000Z',
+        clock_out_at: '2026-11-04T14:00:00.000Z',
+        clock_out_status: 'approved'
+      })
+    )
+    expect(view.inLabel).toMatch(/2:00\s?PM/i)
+    expect(view.outLabel).toMatch(/10:00\s?PM/i)
+    expect(view.inCaptured).toBeNull()
+    expect(view.outCaptured).toBeNull()
+    expect(view.hours).toBe(8)
+  })
+})
+
 describe('errorMessage', () => {
   it('reads message from Error and from supabase-style objects', () => {
     expect(errorMessage(new Error('table missing'), 'fallback')).toBe('table missing')
@@ -406,5 +526,16 @@ describe('findOverlappingShift', () => {
     expect(
       findOverlappingShift('Shai', '2026-11-05T06:00:00.000Z', '2026-11-05T14:00:00.000Z', [open])
     ).toBe(open)
+  })
+
+  it('rejects missed-punch overtime that would not be paid', () => {
+    const inAt = '2026-11-04T06:00:00.000Z' // 2:00 PM Manila
+    const outAt = '2026-11-04T14:00:00.000Z' // 10:00 PM Manila
+    expect(missedPunchOtError(inAt, outAt, 0)).toBeNull()
+    expect(missedPunchOtError(inAt, outAt, 2)).toBeNull()
+    expect(missedPunchOtError(inAt, outAt, 1)).toMatch(/at least 2 hours/)
+    // 1.5 hours runs to 11:30 PM, which pays the 2-hour minimum.
+    expect(missedPunchOtError(inAt, outAt, 1.5)).toBeNull()
+    expect(missedPunchOtError(inAt, outAt, -1)).toMatch(/zero or more/)
   })
 })

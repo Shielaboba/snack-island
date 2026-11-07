@@ -58,3 +58,4 @@ describe('staff clock OT request migration is additive', () => {
     expect(otSql).not.toMatch(/ALTER TABLE\s+(orders|expenses|store_sessions|ledger_entries)/i)
   })
 })
+

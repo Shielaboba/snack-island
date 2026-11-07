@@ -14,6 +14,7 @@ const HOUR_MS = 60 * 60 * 1000
 export const STANDARD_SHIFT_HOURS = 8
 export const MIN_OT_HOURS = 2
 export const OT_REQUEST_HOUR_MANILA = 22
+const HALF_PAY_OT_START_MINUTES = 23 * 60 + 30
 export const SCHEDULED_START_HOUR_MANILA = 14
 
 export function isOpenShift(shift: StaffClockShift): boolean {
@@ -110,11 +111,47 @@ export function rawOvertimeHours(
   return Math.max(0, Math.round((elapsedHours(shift, now) - STANDARD_SHIFT_HOURS) * 100) / 100)
 }
 
-export function overtimeHours(shift: StaffClockShift, now: Date = new Date()): number {
-  if (!shift.ot_requested || shift.ot_status === 'declined' || !shift.ot_status) return 0
-  const raw = rawOvertimeHours(shift, now)
+function clockOutInHalfPayWindow(
+  shift: Pick<StaffClockShift, 'clock_out_at' | 'clock_out_status'>
+): boolean {
+  if (!shift.clock_out_at || shift.clock_out_status === 'declined') return false
+  const minutes = manilaMinutes(shift.clock_out_at)
+  return minutes >= HALF_PAY_OT_START_MINUTES || minutes === 0
+}
+
+export function clockOutCoveringOvertime(clockInAt: string, clockOutAt: string, otHours: number): string {
+  const extra = Number(otHours) || 0
+  if (extra <= 0) return clockOutAt
+  const covered = Date.parse(clockInAt) + (STANDARD_SHIFT_HOURS + extra) * HOUR_MS
+  return new Date(Math.max(Date.parse(clockOutAt), covered)).toISOString()
+}
+
+function overtimeFromRaw(
+  raw: number,
+  shift: Pick<StaffClockShift, 'clock_out_at' | 'clock_out_status'>
+): number {
+  if (raw > 0 && raw < MIN_OT_HOURS && clockOutInHalfPayWindow(shift)) return MIN_OT_HOURS
   if (raw < MIN_OT_HOURS) return 0
   return raw
+}
+
+export function overtimeHours(shift: StaffClockShift, now: Date = new Date()): number {
+  if (!shift.ot_requested || shift.ot_status === 'declined' || !shift.ot_status) return 0
+  return overtimeFromRaw(rawOvertimeHours(shift, now), shift)
+}
+
+// Overtime added to a missed punch must reach the paid minimum, or it is recorded but paid as nothing.
+export function missedPunchOtError(clockInAt: string, clockOutAt: string, otHours: number): string | null {
+  const extra = Number(otHours) || 0
+  if (extra < 0) return 'Overtime hours must be zero or more.'
+  if (extra === 0) return null
+  const shift = {
+    clock_in_at: clockInAt,
+    clock_out_at: clockOutCoveringOvertime(clockInAt, clockOutAt, extra),
+    clock_out_status: 'approved' as const
+  }
+  if (overtimeFromRaw(rawOvertimeHours(shift), shift) > 0) return null
+  return `Overtime must be at least ${MIN_OT_HOURS} hours, or run until 11:30 PM to midnight.`
 }
 
 export function recordedOvertimeHours(
@@ -132,6 +169,10 @@ export function manilaYmd(iso: string): string {
     month: '2-digit',
     day: '2-digit'
   }).format(new Date(iso))
+}
+
+export function manilaToday(now: Date = new Date()): string {
+  return manilaYmd(now.toISOString())
 }
 
 export function otRequestOpensAt(clockInAt: string): Date {
@@ -318,6 +359,63 @@ export function formatManilaClock(iso: string): string {
     minute: '2-digit',
     hour12: true
   }).format(new Date(iso))
+}
+
+export type ReflectedPunch = {
+  inLabel: string
+  outLabel: string | null
+  inCaptured: string | null
+  outCaptured: string | null
+  hours: number | null
+}
+
+function manilaMinutes(iso: string): number {
+  return Number(manilaPart(iso, 'hour')) * 60 + Number(manilaPart(iso, 'minute'))
+}
+
+function otKeepsCapturedTime(status: PunchStatus | null): boolean {
+  return status === 'pending' || status === 'approved'
+}
+
+function outAtOrAfterTen(clockInAt: string, clockOutAt: string): boolean {
+  if (manilaYmd(clockOutAt) > manilaYmd(clockInAt)) return true
+  return manilaMinutes(clockOutAt) >= OT_REQUEST_HOUR_MANILA * 60
+}
+
+export function reflectedPunch(
+  shift: Pick<StaffClockShift, 'clock_in_at' | 'clock_out_at' | 'ot_status'>
+): ReflectedPunch {
+  const capturedIn = formatManilaClock(shift.clock_in_at)
+  const capturedOut = shift.clock_out_at ? formatManilaClock(shift.clock_out_at) : null
+  const reflect = !otKeepsCapturedTime(shift.ot_status) && isEarlyClockIn(shift.clock_in_at)
+  const inLabel = reflect
+    ? formatManilaClock(`${manilaYmd(shift.clock_in_at)}T${String(SCHEDULED_START_HOUR_MANILA).padStart(2, '0')}:00:00+08:00`)
+    : capturedIn
+  const capOut =
+    reflect && shift.clock_out_at && outAtOrAfterTen(shift.clock_in_at, shift.clock_out_at)
+  const outLabel = capOut
+    ? formatManilaClock(`${manilaYmd(shift.clock_in_at)}T${String(OT_REQUEST_HOUR_MANILA).padStart(2, '0')}:00:00+08:00`)
+    : capturedOut
+
+  let hours: number | null = null
+  if (shift.clock_out_at) {
+    if (!reflect) {
+      hours = shiftHours(shift)
+    } else if (capOut) {
+      hours = STANDARD_SHIFT_HOURS
+    } else {
+      const minutes = manilaMinutes(shift.clock_out_at) - SCHEDULED_START_HOUR_MANILA * 60
+      hours = minutes < 0 ? null : Math.round((minutes / 60) * 100) / 100
+    }
+  }
+
+  return {
+    inLabel,
+    outLabel,
+    inCaptured: inLabel === capturedIn ? null : capturedIn,
+    outCaptured: !outLabel || outLabel === capturedOut ? null : capturedOut,
+    hours
+  }
 }
 
 export function formatManilaDateTime(iso: string): string {

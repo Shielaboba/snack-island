@@ -43,11 +43,22 @@ describe('ClockShiftEditModal', () => {
   it('edits typed in/out times for an existing shift', async () => {
     const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'edit', shift })
     await nextTick()
-    const inInput = document.querySelector('[data-testid="clock-in-time"]') as HTMLInputElement
-    const outInput = document.querySelector('[data-testid="clock-out-time"]') as HTMLInputElement
-    expect(inInput.value).toBe('2026-11-04T14:00')
-    outInput.value = '2026-11-04T22:00'
-    outInput.dispatchEvent(new Event('input'))
+    const inDate = document.querySelector('[data-testid="clock-in-date"]') as HTMLInputElement
+    const inTime = document.querySelector('[data-testid="clock-in-clock"]') as HTMLInputElement
+    const outDate = document.querySelector('[data-testid="clock-out-date"]') as HTMLInputElement
+    const outTime = document.querySelector('[data-testid="clock-out-clock"]') as HTMLInputElement
+    expect(inDate.value).toBe('2026-11-04')
+    expect(inTime.value).toBe('14:00')
+    expect(document.querySelector('[data-testid="clock-ot-hours"]')).toBeNull()
+    ;(document.querySelector('[data-testid="clock-in-date-open"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="date-calendar"]')).not.toBeNull()
+    ;(document.querySelector('[data-testid="date-calendar"] [data-date="2026-11-04"]') as HTMLButtonElement).click()
+    await nextTick()
+    outDate.value = '2026-11-04'
+    outDate.dispatchEvent(new Event('input'))
+    outTime.value = '22:00'
+    outTime.dispatchEvent(new Event('input'))
     await nextTick()
     ;(document.querySelector('[data-testid="clock-edit-save"]') as HTMLButtonElement).click()
     await nextTick()
@@ -61,12 +72,40 @@ describe('ClockShiftEditModal', () => {
   })
 
   it('add missed punch requires a staff name and both times', async () => {
-    const { app } = mountModal({ isOpen: true, mode: 'add' })
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
     await nextTick()
     expect(document.querySelector('[data-testid="clock-staff"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="clock-edit-modal"]')?.textContent).toMatch(
       /missed punch/i
     )
+    expect((document.querySelector('[data-testid="clock-in-clock"]') as HTMLInputElement).value).toBe('14:00')
+    expect((document.querySelector('[data-testid="clock-out-clock"]') as HTMLInputElement).value).toBe('22:00')
+    const inDate = (document.querySelector('[data-testid="clock-in-date"]') as HTMLInputElement).value
+    const outDate = (document.querySelector('[data-testid="clock-out-date"]') as HTMLInputElement).value
+    expect(inDate).toBe(outDate)
+    expect(inDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    const ot = document.querySelector('[data-testid="clock-ot-hours"]') as HTMLInputElement
+    expect(ot.value).toBe('0')
+    ot.value = '2'
+    ot.dispatchEvent(new Event('input'))
+    await nextTick()
+    ;(document.querySelector('[data-testid="clock-edit-save"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(getSubmitted()).toEqual(expect.objectContaining({ ot_hours: 2 }))
+    app.unmount()
+  })
+
+  it('does not submit a missed punch with overtime below the paid minimum', async () => {
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const ot = document.querySelector('[data-testid="clock-ot-hours"]') as HTMLInputElement
+    ot.value = '1'
+    ot.dispatchEvent(new Event('input'))
+    await nextTick()
+    ;(document.querySelector('[data-testid="clock-edit-save"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(getSubmitted()).toBeNull()
+    expect(document.querySelector('[data-testid="clock-edit-modal"]')?.textContent).toMatch(/at least 2 hours/)
     app.unmount()
   })
 })

@@ -68,12 +68,12 @@
               {{ focus === 'all' ? 'No punches on this day.' : 'Nothing in this filter for this day. Choose All punches this day.' }}
             </td>
           </tr>
-          <tr v-for="row in visibleShifts" :key="row.id">
+          <tr v-for="{ row, punch } in visibleShifts" :key="row.id">
             <td class="name">{{ row.staff_name }}</td>
             <td>
               <div class="punch">
-                <span>{{ reflectedPunch(row).inLabel }}</span>
-                <span v-if="reflectedPunch(row).inCaptured" class="captured">Captured {{ reflectedPunch(row).inCaptured }}</span>
+                <span>{{ punch.inLabel }}</span>
+                <span v-if="punch.inCaptured" class="captured">Captured {{ punch.inCaptured }}</span>
                 <div class="marks">
                   <span class="badge" :class="row.clock_in_status">{{ punchStatusLabel(row.clock_in_status) }}</span>
                   <button
@@ -99,8 +99,8 @@
             </td>
             <td>
               <div class="punch">
-                <span>{{ reflectedPunch(row).outLabel ?? '—' }}</span>
-                <span v-if="reflectedPunch(row).outCaptured" class="captured">Captured {{ reflectedPunch(row).outCaptured }}</span>
+                <span>{{ punch.outLabel ?? '—' }}</span>
+                <span v-if="punch.outCaptured" class="captured">Captured {{ punch.outCaptured }}</span>
                 <span v-if="isOpenShift(row)" class="badge open">On the clock</span>
                 <div v-if="row.clock_out_status" class="marks">
                   <span class="badge" :class="row.clock_out_status">{{ punchStatusLabel(row.clock_out_status) }}</span>
@@ -125,7 +125,7 @@
                 </div>
               </div>
             </td>
-            <td class="num">{{ formatHours(reflectedPunch(row).hours) }}</td>
+            <td class="num">{{ formatHours(punch.hours) }}</td>
             <td :data-testid="`ot-${row.id}`">
               <div class="punch">
                 <span>{{ otActive(row) && recordedOvertimeHours(row) ? formatHours(recordedOvertimeHours(row)) : '—' }}</span>
@@ -216,6 +216,7 @@
         <div>
           <h2>Payments</h2>
           <p>Cash already handed over for a payroll week. A payment the next day still counts toward that week.</p>
+          <p v-if="paymentSyncError" class="sync-error" role="alert" data-testid="payment-sync-error">{{ paymentSyncError }}</p>
         </div>
         <button class="btn-primary" type="button" data-testid="add-payment" @click="openPayment">Add payment</button>
       </div>
@@ -258,6 +259,7 @@
             <button class="payable-x" type="button" aria-label="Close" @click="paymentOpen = false">×</button>
           </header>
           <div class="payable-form">
+            <p v-if="paymentError" class="span-2 form-error" role="alert" data-testid="payment-form-error">{{ paymentError }}</p>
             <label>
               Staff
               <select v-model="paymentDraft.staffName" data-testid="payment-form-staff">
@@ -322,7 +324,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { STAFF_NAMES, type PunchStatus, type StaffClockShift, type StaffName } from '../models/StaffClock'
 import { authService } from '../services/authService'
 import { staffClockService } from '../services/staffClockService'
@@ -350,6 +352,7 @@ import ClockPhotoModal from './ClockPhotoModal.vue'
 import ClockShiftEditModal from './ClockShiftEditModal.vue'
 import ClockShiftDeleteModal from './ClockShiftDeleteModal.vue'
 import PayrollSummaryModal from './PayrollSummaryModal.vue'
+import { staffPayrollService } from '../services/staffPayrollService'
 import DateField from './DateField.vue'
 
 const shifts = ref<StaffClockShift[]>([])
@@ -369,14 +372,66 @@ const deleteError = ref('')
 const payments = ref<StaffPayment[]>(loadStaffPayments())
 const paymentOpen = ref(false)
 const paymentDraft = ref(emptyPayment())
-let paymentSeq = payments.value.reduce((max, row) => {
-  const match = /^payment-(\d+)$/.exec(row.id)
-  return match ? Math.max(max, Number(match[1])) : max
-}, 0)
-watch(payments, (rows) => saveStaffPayments(rows), { deep: true })
+const paymentError = ref('')
+const paymentSyncError = ref('')
+// True while payments pulled from the shared table are copied in, so they are not pushed straight back.
+let applyingShared = false
+// Payments added here before the shared records arrive keep the local list.
+let paymentsEdited = false
 
-const today = manilaToday()
-const selectedDay = ref(today)
+function highestPaymentSeq(rows: StaffPayment[]): number {
+  return rows.reduce((max, row) => {
+    const match = /^payment-(\d+)$/.exec(row.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+}
+
+let paymentSeq = highestPaymentSeq(payments.value)
+watch(payments, (rows) => {
+  saveStaffPayments(rows)
+  if (applyingShared) return
+  paymentsEdited = true
+  staffPayrollService.push('payments', rows).then(
+    () => {
+      paymentSyncError.value = ''
+    },
+    () => {
+      paymentSyncError.value = 'Could not save payments to the shared records. They are only on this device for now.'
+    }
+  )
+}, { deep: true })
+
+async function pullPayments() {
+  try {
+    await staffPayrollService.pull()
+  } catch {
+    paymentSyncError.value = 'Could not load the shared payments. Showing what this device saved last.'
+    return
+  }
+  if (paymentsEdited) return
+  applyingShared = true
+  payments.value = loadStaffPayments()
+  paymentSeq = Math.max(paymentSeq, highestPaymentSeq(payments.value))
+  await nextTick()
+  applyingShared = false
+}
+
+const today = ref(manilaToday())
+const selectedDay = ref(today.value)
+
+// Keep "today" right when the page stays open past midnight.
+function refreshToday() {
+  const next = manilaToday()
+  if (next === today.value) return
+  if (selectedDay.value === today.value) selectedDay.value = next
+  today.value = next
+}
+const todayTimer = setInterval(refreshToday, 60_000)
+document.addEventListener('visibilitychange', refreshToday)
+onUnmounted(() => {
+  clearInterval(todayTimer)
+  document.removeEventListener('visibilitychange', refreshToday)
+})
 const staffFilter = ref<'All' | StaffName>('All')
 type Focus = 'all' | 'decisions'
 const focus = ref<Focus>('all')
@@ -414,10 +469,12 @@ const visibleShifts = computed(() =>
         Date.parse(a.clock_in_at) - Date.parse(b.clock_in_at) ||
         a.staff_name.localeCompare(b.staff_name)
     )
+    .map((row) => ({ row, punch: reflectedPunch(row) }))
 )
 
 function backToToday() {
-  selectedDay.value = today
+  refreshToday()
+  selectedDay.value = today.value
 }
 
 function otActive(row: StaffClockShift): boolean {
@@ -580,10 +637,26 @@ function emptyPayment() {
 
 function openPayment() {
   paymentDraft.value = emptyPayment()
+  paymentError.value = ''
   paymentOpen.value = true
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function paymentDraftError(): string {
+  const draft = paymentDraft.value
+  if (!(Number(draft.amount) > 0)) return 'Enter an amount above zero.'
+  if (!ISO_DATE.test(draft.paidOn)) return 'Choose the date paid.'
+  if (!ISO_DATE.test(draft.payrollStart) || !ISO_DATE.test(draft.payrollEnd)) {
+    return 'Choose the payroll start and end dates.'
+  }
+  if (draft.payrollEnd < draft.payrollStart) return 'Payroll end must be on or after the start.'
+  return ''
+}
+
 function savePayment() {
+  paymentError.value = paymentDraftError()
+  if (paymentError.value) return
   paymentSeq += 1
   payments.value.push({
     id: `payment-${paymentSeq}`,
@@ -604,7 +677,10 @@ function paymentWeekLabel(row: StaffPayment): string {
   return `${formatShortDate(row.payrollStart)} – ${formatShortDate(row.payrollEnd)}`
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  pullPayments()
+})
 </script>
 
 <style scoped>
@@ -750,6 +826,15 @@ onMounted(load)
 }
 .payments-head h2 { margin: 0; font-size: 18px; }
 .payments-head p { margin: 4px 0 0; color: #6b7280; font-size: 14px; }
+.payments-head .sync-error { color: #b91c1c; }
+.form-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 13px;
+}
 .payments-wrap {
   background: #fff;
   border: 1px solid #e5e7eb;

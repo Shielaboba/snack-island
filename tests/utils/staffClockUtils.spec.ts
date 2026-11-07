@@ -20,6 +20,7 @@ import {
   isEarlyClockIn,
   overtimeHours,
   clockOutCoveringOvertime,
+  missedPunchOtError,
   recordedOvertimeHours,
   shouldPromptOtOnClockOut,
   validateRecordOt,
@@ -525,5 +526,16 @@ describe('findOverlappingShift', () => {
     expect(
       findOverlappingShift('Shai', '2026-11-05T06:00:00.000Z', '2026-11-05T14:00:00.000Z', [open])
     ).toBe(open)
+  })
+
+  it('rejects missed-punch overtime that would not be paid', () => {
+    const inAt = '2026-11-04T06:00:00.000Z' // 2:00 PM Manila
+    const outAt = '2026-11-04T14:00:00.000Z' // 10:00 PM Manila
+    expect(missedPunchOtError(inAt, outAt, 0)).toBeNull()
+    expect(missedPunchOtError(inAt, outAt, 2)).toBeNull()
+    expect(missedPunchOtError(inAt, outAt, 1)).toMatch(/at least 2 hours/)
+    // 1.5 hours runs to 11:30 PM, which pays the 2-hour minimum.
+    expect(missedPunchOtError(inAt, outAt, 1.5)).toBeNull()
+    expect(missedPunchOtError(inAt, outAt, -1)).toMatch(/zero or more/)
   })
 })

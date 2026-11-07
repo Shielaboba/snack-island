@@ -28,6 +28,15 @@ const list = vi.fn(async () => [shift])
 
 vi.mock('../../src/assets/logo.png', () => ({ default: 'logo.png' }))
 
+const payrollPull = vi.fn(async () => {})
+const payrollPush = vi.fn(async () => {})
+vi.mock('../../src/services/staffPayrollService', () => ({
+  staffPayrollService: {
+    pull: (...args: unknown[]) => payrollPull(...args),
+    push: (...args: unknown[]) => payrollPush(...args)
+  }
+}))
+
 vi.mock('../../src/services/staffClockService', () => ({
   staffClockService: {
     list: (...args: unknown[]) => list(...args)
@@ -56,6 +65,11 @@ const payableStorage: Storage = {
   }
 }
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: payableStorage })
+
+// Lets the page finish loading the shared records before the test types.
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
 
 function mountPage() {
   const el = document.createElement('div')
@@ -116,7 +130,8 @@ async function saveCompensation(
     when.value = 'forever'
     when.dispatchEvent(new Event('change'))
     await nextTick()
-    expect(modal.querySelector('[data-testid="compensation-form-date"]')).toBeNull()
+    expect(modal.querySelector('[data-testid="compensation-form-date"]')).not.toBeNull()
+    if (fields.date) await setValue(modal, 'compensation-form-date', fields.date)
   } else if (fields.date) {
     await setValue(modal, 'compensation-form-date', fields.date)
   }
@@ -236,20 +251,20 @@ describe('StaffPage.vue', () => {
 
   it('keeps the rate and day off after save', async () => {
     const unsaved = mountPage()
-    await nextTick()
+    await settle()
     await setValue(unsaved.el, 'staff-rate-Shai', '800')
     ;(unsaved.el.querySelector('[aria-label="Shai Monday"]') as HTMLButtonElement).click()
     await nextTick()
     unsaved.app.unmount()
 
     const reverted = mountPage()
-    await nextTick()
+    await settle()
     expect((reverted.el.querySelector('[data-testid="staff-rate-Shai"]') as HTMLInputElement).value).toBe('500')
     expect((reverted.el.querySelector('[aria-label="Shai Monday"]') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     reverted.app.unmount()
 
     const first = mountPage()
-    await nextTick()
+    await settle()
     await setValue(first.el, 'staff-rate-Shai', '800')
     ;(first.el.querySelector('[aria-label="Shai Monday"]') as HTMLButtonElement).click()
     await nextTick()
@@ -263,7 +278,7 @@ describe('StaffPage.vue', () => {
     first.app.unmount()
 
     const second = mountPage()
-    await nextTick()
+    await settle()
     expect((second.el.querySelector('[data-testid="staff-rate-Shai"]') as HTMLInputElement).value).toBe('800')
     expect((second.el.querySelector('[aria-label="Shai Monday"]') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
     second.app.unmount()
@@ -335,5 +350,35 @@ describe('StaffPage.vue', () => {
     expect(third.el.querySelector('[data-testid="payable-name-loan-1"]')).toBeNull()
     expect(third.el.textContent).toContain('No payables yet.')
     third.app.unmount()
+  })
+
+  it('shows records pulled from the shared table and shares staff changes', async () => {
+    payrollPull.mockImplementationOnce(async () => {
+      payableStorage.setItem(
+        'snack-island-staff-payables',
+        JSON.stringify([
+          {
+            id: 'loan-7',
+            name: 'Shared advance',
+            staffName: 'Den',
+            deductionTotal: 900,
+            payrollCount: 3,
+            firstPayrollDate: '2026-11-05',
+            paid: false
+          }
+        ])
+      )
+    })
+    payrollPush.mockClear()
+    const { el, app } = mountPage()
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(el.querySelector('[data-testid="payable-name-loan-7"]')?.textContent).toContain('Shared advance')
+    expect(payrollPush).not.toHaveBeenCalled()
+    ;(el.querySelector('[data-testid="save-staff"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(payrollPush).toHaveBeenCalledWith('profiles', expect.any(Array))
+    app.unmount()
   })
 })

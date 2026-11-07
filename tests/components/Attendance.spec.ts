@@ -45,6 +45,15 @@ vi.mock('../../src/services/staffClockService', () => ({
   }
 }))
 
+const payrollPull = vi.fn(async () => {})
+const payrollPush = vi.fn(async () => {})
+vi.mock('../../src/services/staffPayrollService', () => ({
+  staffPayrollService: {
+    pull: (...args: unknown[]) => payrollPull(...args),
+    push: (...args: unknown[]) => payrollPush(...args)
+  }
+}))
+
 vi.mock('../../src/services/authService', () => ({
   authService: {
     getCurrentUser: () => ({ id: '2', username: 'ana', roleId: 2 })
@@ -434,6 +443,20 @@ describe('Attendance.vue', () => {
     ;(el.querySelector('[data-testid="record-ot-s1"]') as HTMLButtonElement).click()
     await nextTick()
     expect(recordOt).toHaveBeenCalledWith(forgot, 'ana')
+    app.unmount()
+  })
+
+  it('does not save a payment without an amount', async () => {
+    const { el, app } = mountPage()
+    await nextTick()
+    ;(el.querySelector('[data-testid="add-payment"]') as HTMLButtonElement).click()
+    await nextTick()
+    const modal = el.querySelector('[data-testid="payment-modal"]') as HTMLElement
+    ;(modal.querySelector('[data-testid="payment-save"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(el.querySelector('[data-testid="payment-modal"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="payment-form-error"]')?.textContent).toContain('amount')
+    expect(el.querySelector('[data-testid="payment-staff-payment-1"]')).toBeNull()
     app.unmount()
   })
 })

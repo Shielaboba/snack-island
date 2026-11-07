@@ -94,4 +94,18 @@ describe('ClockShiftEditModal', () => {
     expect(getSubmitted()).toEqual(expect.objectContaining({ ot_hours: 2 }))
     app.unmount()
   })
+
+  it('does not submit a missed punch with overtime below the paid minimum', async () => {
+    const { app, getSubmitted } = mountModal({ isOpen: true, mode: 'add' })
+    await nextTick()
+    const ot = document.querySelector('[data-testid="clock-ot-hours"]') as HTMLInputElement
+    ot.value = '1'
+    ot.dispatchEvent(new Event('input'))
+    await nextTick()
+    ;(document.querySelector('[data-testid="clock-edit-save"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(getSubmitted()).toBeNull()
+    expect(document.querySelector('[data-testid="clock-edit-modal"]')?.textContent).toMatch(/at least 2 hours/)
+    app.unmount()
+  })
 })

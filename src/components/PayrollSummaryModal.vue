@@ -81,9 +81,12 @@
 import { computed, ref, watch } from 'vue'
 import { STAFF_NAMES, type StaffClockShift, type StaffName } from '../models/StaffClock'
 import {
+  DEFAULT_STAFF,
+  addDays,
   compensationApplies,
   compensationForPayrollRange,
   deductionForPayrollRange,
+  firstPaydayOnOrAfter,
   formatShortDate,
   loadStaffCompensation,
   loadStaffPayables,
@@ -103,6 +106,8 @@ import { calculatePayroll, formatPayrollPeso } from '../modules/staffClock/staff
 import { renderPayrollSummaryPng } from '../modules/staff/payrollSummaryImage'
 import logoUrl from '../assets/logo.png'
 import DateField from './DateField.vue'
+import { manilaToday } from '../modules/staffClock/staffClockUtils'
+import { staffPayrollService } from '../services/staffPayrollService'
 
 const props = defineProps<{
   isOpen: boolean
@@ -117,9 +122,19 @@ const profiles = ref<StaffProfile[]>([])
 const loans = ref<StaffLoan[]>([])
 const compensations = ref<StaffCompensation[]>([])
 const payments = ref<StaffPayment[]>([])
-const payrollStaff = ref<StaffName>('Shai')
-const payrollStart = ref('2026-10-31')
-const payrollEnd = ref('2026-11-06')
+// Used only when nothing can be read: this week's payroll for the first default staff.
+const FALLBACK_PROFILE = DEFAULT_STAFF[0] as StaffProfile
+
+function currentWeek() {
+  const fallback = FALLBACK_PROFILE
+  const endDate = firstPaydayOnOrAfter(manilaToday(), fallback.payrollWeekday)
+  return { staffName: fallback.name, startDate: addDays(endDate, -6), endDate }
+}
+
+const initialWeek = currentWeek()
+const payrollStaff = ref<StaffName>(initialWeek.staffName)
+const payrollStart = ref(initialWeek.startDate)
+const payrollEnd = ref(initialWeek.endDate)
 const copyLabel = ref('Copy image')
 const applying = ref(false)
 
@@ -131,25 +146,38 @@ function readOr<T>(read: () => T, fallback: T): T {
   }
 }
 
+function defaultProfiles(): StaffProfile[] {
+  return DEFAULT_STAFF.map((row) => ({ ...row, daysOff: [...row.daysOff] }))
+}
+
+function readRecords() {
+  loans.value = readOr(loadStaffPayables, [])
+  compensations.value = readOr(loadStaffCompensation, [])
+  payments.value = readOr(loadStaffPayments, [])
+  profiles.value = readOr(loadStaffProfiles, defaultProfiles())
+}
+
 watch(
   () => props.isOpen,
   (open) => {
     if (!open) return
     applying.value = true
-    loans.value = readOr(loadStaffPayables, [])
-    compensations.value = readOr(loadStaffCompensation, [])
-    payments.value = readOr(loadStaffPayments, [])
-    profiles.value = readOr(loadStaffProfiles, [])
-    const selection = readOr(() => resolvePayrollView(loans.value), {
-      staffName: 'Shai' as StaffName,
-      startDate: '2026-10-31',
-      endDate: '2026-11-06'
-    })
+    readRecords()
+    const selection = readOr(() => resolvePayrollView(loans.value), currentWeek())
     payrollStaff.value = selection.staffName
     payrollStart.value = selection.startDate
     payrollEnd.value = selection.endDate
     copyLabel.value = 'Copy image'
     applying.value = false
+    // Refresh rates, loans and payments from the shared records; keep the chosen week.
+    staffPayrollService.pull().then(
+      () => {
+        if (props.isOpen) readRecords()
+      },
+      () => {
+        // Offline: the summary uses what this device saved last.
+      }
+    )
   },
   { immediate: true }
 )
@@ -168,7 +196,10 @@ watch([payrollStaff, payrollStart, payrollEnd], () => {
 })
 
 const selectedProfile = computed(
-  () => profiles.value.find((row) => row.name === payrollStaff.value) ?? profiles.value[0]
+  () =>
+    profiles.value.find((row) => row.name === payrollStaff.value) ??
+    profiles.value[0] ??
+    { ...FALLBACK_PROFILE, daysOff: [...FALLBACK_PROFILE.daysOff] }
 )
 
 const payrollWeekLabel = computed(() => {

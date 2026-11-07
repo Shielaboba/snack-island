@@ -126,12 +126,32 @@ export function clockOutCoveringOvertime(clockInAt: string, clockOutAt: string, 
   return new Date(Math.max(Date.parse(clockOutAt), covered)).toISOString()
 }
 
-export function overtimeHours(shift: StaffClockShift, now: Date = new Date()): number {
-  if (!shift.ot_requested || shift.ot_status === 'declined' || !shift.ot_status) return 0
-  const raw = rawOvertimeHours(shift, now)
+function overtimeFromRaw(
+  raw: number,
+  shift: Pick<StaffClockShift, 'clock_out_at' | 'clock_out_status'>
+): number {
   if (raw > 0 && raw < MIN_OT_HOURS && clockOutInHalfPayWindow(shift)) return MIN_OT_HOURS
   if (raw < MIN_OT_HOURS) return 0
   return raw
+}
+
+export function overtimeHours(shift: StaffClockShift, now: Date = new Date()): number {
+  if (!shift.ot_requested || shift.ot_status === 'declined' || !shift.ot_status) return 0
+  return overtimeFromRaw(rawOvertimeHours(shift, now), shift)
+}
+
+// Overtime added to a missed punch must reach the paid minimum, or it is recorded but paid as nothing.
+export function missedPunchOtError(clockInAt: string, clockOutAt: string, otHours: number): string | null {
+  const extra = Number(otHours) || 0
+  if (extra < 0) return 'Overtime hours must be zero or more.'
+  if (extra === 0) return null
+  const shift = {
+    clock_in_at: clockInAt,
+    clock_out_at: clockOutCoveringOvertime(clockInAt, clockOutAt, extra),
+    clock_out_status: 'approved' as const
+  }
+  if (overtimeFromRaw(rawOvertimeHours(shift), shift) > 0) return null
+  return `Overtime must be at least ${MIN_OT_HOURS} hours, or run until 11:30 PM to midnight.`
 }
 
 export function recordedOvertimeHours(

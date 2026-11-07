@@ -12,6 +12,7 @@ import { compressSelfie } from '../modules/staffClock/compressSelfie'
 import {
   clockOutCoveringOvertime,
   findOverlappingShift,
+  missedPunchOtError,
   openShiftFor,
   validateClockIn,
   validateClockOut,
@@ -301,6 +302,8 @@ export const staffClockService = {
     if (!check.ok) throw new Error(check.message)
     const now = new Date().toISOString()
     const otHours = Number(input.ot_hours) || 0
+    const otError = missedPunchOtError(input.clock_in_at, input.clock_out_at, otHours)
+    if (otError) throw new Error(otError)
     const hasOt = otHours > 0
     const clockOutAt = clockOutCoveringOvertime(input.clock_in_at, input.clock_out_at, otHours)
     assertNoOverlap(input.staff_name, input.clock_in_at, clockOutAt, existing)

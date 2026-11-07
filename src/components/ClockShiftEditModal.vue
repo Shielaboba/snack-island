@@ -80,6 +80,7 @@ import DateField from './DateField.vue'
 import {
   fromManilaDateTimeLocal,
   manilaToday,
+  missedPunchOtError,
   toManilaDateTimeLocal,
   validateShiftTimes
 } from '../modules/staffClock/staffClockUtils'
@@ -159,8 +160,9 @@ function submit() {
       return
     }
     const otHours = Number(form.ot_hours) || 0
-    if (props.mode === 'add' && otHours < 0) {
-      localError.value = 'Overtime hours must be zero or more.'
+    const otError = props.mode === 'add' && clockOutAt ? missedPunchOtError(clockInAt, clockOutAt, otHours) : null
+    if (otError) {
+      localError.value = otError
       return
     }
     emit('submit', {

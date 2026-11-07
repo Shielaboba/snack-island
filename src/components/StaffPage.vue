@@ -1,5 +1,6 @@
 <template>
   <div class="staff-page">
+    <p v-if="syncError" class="sync-error" role="alert" data-testid="staff-sync-error">{{ syncError }}</p>
     <section class="panel" aria-label="Staff list">
       <div class="panel-head">
         <h2>Staff</h2>
@@ -191,7 +192,7 @@
               <td :data-testid="`compensation-name-${item.id}`">{{ item.name }}</td>
               <td :data-testid="`compensation-staff-${item.id}`">{{ item.staffName }}</td>
               <td :data-testid="`compensation-amount-${item.id}`">{{ formatPayrollPeso(item.amount) }}</td>
-              <td :data-testid="`compensation-date-${item.id}`">{{ item.forever ? 'Forever' : item.date }}</td>
+              <td :data-testid="`compensation-date-${item.id}`">{{ item.forever ? (item.date ? `Forever from ${item.date}` : 'Forever') : item.date }}</td>
               <td>
                 <button class="text-btn" type="button" :data-testid="`compensation-remove-${item.id}`" @click="removeCompensation(item.id)">
                   Remove
@@ -235,8 +236,8 @@
                 <option value="forever">Forever</option>
               </select>
             </label>
-            <label v-if="compensationDraft.when === 'date'" class="span-2">
-              Date
+            <label class="span-2">
+              {{ compensationDraft.when === 'forever' ? 'Starts on' : 'Date' }}
               <DateField v-model="compensationDraft.date" test-id="compensation-form-date" aria-label="Compensation date" />
             </label>
           </div>
@@ -251,7 +252,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { STAFF_NAMES, type StaffName } from '../models/StaffClock'
 import {
   WEEKDAYS,
@@ -272,29 +273,82 @@ import {
   type StaffProfile
 } from '../modules/staff/staffProfile'
 import { formatPayrollPeso } from '../modules/staffClock/staffClockPayroll'
+import { manilaToday } from '../modules/staffClock/staffClockUtils'
+import { staffPayrollService } from '../services/staffPayrollService'
+import type { PayrollRecordKey } from '../modules/staff/staffProfile'
 import DateField from './DateField.vue'
 
 const profiles = ref<StaffProfile[]>(loadStaffProfiles())
 const loans = ref<StaffLoan[]>(loadStaffPayables())
 const compensations = ref<StaffCompensation[]>(loadStaffCompensation())
 const staffSaved = ref(false)
-watch(loans, (rows) => saveStaffPayables(rows), { deep: true })
-watch(compensations, (rows) => saveStaffCompensation(rows), { deep: true })
+const syncError = ref('')
+// True while records pulled from the shared table are copied in, so they are not pushed straight back.
+let applyingShared = false
+// Lists changed here before the shared records arrive keep the local edits.
+const edited = { profiles: false, payables: false, compensation: false }
+
+function share(key: PayrollRecordKey, rows: unknown[]) {
+  staffPayrollService.push(key, rows).then(
+    () => {
+      syncError.value = ''
+    },
+    () => {
+      syncError.value = 'Could not save to the shared records. Changes are only on this device for now.'
+    }
+  )
+}
+
+watch(loans, (rows) => {
+  saveStaffPayables(rows)
+  if (applyingShared) return
+  edited.payables = true
+  share('payables', rows)
+}, { deep: true })
+watch(compensations, (rows) => {
+  saveStaffCompensation(rows)
+  if (applyingShared) return
+  edited.compensation = true
+  share('compensation', rows)
+}, { deep: true })
 watch(profiles, () => {
+  if (applyingShared) return
+  edited.profiles = true
   staffSaved.value = false
 }, { deep: true })
 const payableOpen = ref(false)
 const compensationOpen = ref(false)
 const draft = ref(emptyPayable())
 const compensationDraft = ref(emptyCompensation())
-let loanSeq = loans.value.reduce((max, loan) => {
-  const match = /^loan-(\d+)$/.exec(loan.id)
-  return match ? Math.max(max, Number(match[1])) : max
-}, 0)
-let compensationSeq = compensations.value.reduce((max, item) => {
-  const match = /^compensation-(\d+)$/.exec(item.id)
-  return match ? Math.max(max, Number(match[1])) : max
-}, 0)
+
+function highestSeq(ids: string[], prefix: string): number {
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`)
+  return ids.reduce((max, id) => {
+    const match = pattern.exec(id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+}
+
+let loanSeq = highestSeq(loans.value.map((row) => row.id), 'loan')
+let compensationSeq = highestSeq(compensations.value.map((row) => row.id), 'compensation')
+
+onMounted(async () => {
+  try {
+    await staffPayrollService.pull()
+  } catch {
+    syncError.value = 'Could not load the shared records. Showing what this device saved last.'
+    return
+  }
+  applyingShared = true
+  if (!edited.profiles) profiles.value = loadStaffProfiles()
+  if (!edited.payables) loans.value = loadStaffPayables()
+  if (!edited.compensation) compensations.value = loadStaffCompensation()
+  loanSeq = Math.max(loanSeq, highestSeq(loans.value.map((row) => row.id), 'loan'))
+  compensationSeq = Math.max(compensationSeq, highestSeq(compensations.value.map((row) => row.id), 'compensation'))
+  // Let the watchers see the pulled rows before pushes resume.
+  await nextTick()
+  applyingShared = false
+})
 
 function installmentLabel(loan: StaffLoan): string {
   if (loan.paid) return 'Paid'
@@ -304,12 +358,12 @@ function installmentLabel(loan: StaffLoan): string {
 }
 
 function saveStaff() {
-  saveStaffProfiles(
-    profiles.value.map((row) => ({
-      ...row,
-      daysOff: [...row.daysOff]
-    }))
-  )
+  const rows = profiles.value.map((row) => ({
+    ...row,
+    daysOff: [...row.daysOff]
+  }))
+  saveStaffProfiles(rows)
+  share('profiles', rows)
   staffSaved.value = true
 }
 
@@ -362,7 +416,8 @@ function savePayable() {
     deductionTotal: Number(draft.value.deductionTotal) || 0,
     payrollCount: Number(draft.value.payrollCount) || 0,
     firstPayrollDate,
-    paid: false
+    paid: false,
+    paidOn: ''
   })
   focusPayroll(draft.value.staffName, firstPayrollDate)
   payableOpen.value = false
@@ -374,7 +429,9 @@ function removeLoan(id: string) {
 
 function markLoanPaid(id: string) {
   const loan = loans.value.find((row) => row.id === id)
-  if (loan) loan.paid = !loan.paid
+  if (!loan) return
+  loan.paid = !loan.paid
+  loan.paidOn = loan.paid ? manilaToday() : ''
 }
 
 function emptyCompensation() {
@@ -400,7 +457,7 @@ function saveCompensation() {
     name: compensationDraft.value.name.trim(),
     staffName: compensationDraft.value.staffName,
     amount: Number(compensationDraft.value.amount) || 0,
-    date: forever ? '' : compensationDraft.value.date,
+    date: compensationDraft.value.date,
     forever
   })
   compensationOpen.value = false
@@ -444,6 +501,14 @@ function removeCompensation(id: string) {
 }
 .panel h2 { margin: 0; font-size: 1.1rem; }
 .panel-note { margin: 0 0 12px; color: #6b7280; font-size: 0.9rem; }
+.sync-error {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 14px;
+}
 .table-wrap { overflow-x: auto; }
 .staff-table {
   width: 100%;

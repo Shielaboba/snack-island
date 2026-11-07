@@ -13,7 +13,9 @@ import {
   payrollSummaryHtml,
   payrollSummaryText,
   payrollWeekRange,
-  perPayrollDeduction
+  perPayrollDeduction,
+  compensationApplies,
+  resolvePayrollView
 } from '../../src/modules/staff/staffProfile'
 
 describe('staff profiles', () => {
@@ -188,7 +190,7 @@ describe('staff profiles', () => {
     expect(paymentTotal([otherWeek], 'Shai', '2026-10-31', '2026-11-06')).toBe(0)
   })
 
-  it('deducts one installment even when the range covers two paydays', () => {
+  it('deducts every installment due in the range', () => {
     const loan = {
       id: 'loan-1',
       name: 'Cash advance',
@@ -198,10 +200,49 @@ describe('staff profiles', () => {
       firstPayrollDate: '2026-11-06'
     }
     expect(deductionForPayrollRange([loan], 'Shai', 5, '2026-10-31', '2026-11-06')).toBe(1000)
-    expect(deductionForPayrollRange([loan], 'Shai', 5, '2026-10-31', '2026-11-13')).toBe(1000)
+    expect(deductionForPayrollRange([loan], 'Shai', 5, '2026-10-31', '2026-11-13')).toBe(2000)
     expect(deductionForPayrollRange([loan], 'Shai', 5, '2026-11-07', '2026-11-12')).toBe(0)
     expect(deductionForPayrollRange([{ ...loan, paid: true }], 'Shai', 5, '2026-10-31', '2026-11-06')).toBe(0)
     expect(deductionForPayroll([{ ...loan, paid: true }], 'Shai', 5, '2026-11-06')).toBe(0)
+  })
+
+  it('keeps deductions on paydays before a loan was marked paid', () => {
+    const loan = {
+      id: 'loan-1',
+      name: 'Cash advance',
+      staffName: 'Shai' as const,
+      deductionTotal: 3000,
+      payrollCount: 3,
+      firstPayrollDate: '2026-11-06',
+      paid: true,
+      paidOn: '2026-11-10'
+    }
+    expect(deductionForPayroll([loan], 'Shai', 5, '2026-11-06')).toBe(1000)
+    expect(deductionForPayroll([loan], 'Shai', 5, '2026-11-13')).toBe(0)
+  })
+
+  it('applies forever compensation only from its start date', () => {
+    const row = {
+      id: 'compensation-1',
+      name: 'Transpo',
+      staffName: 'Shai' as const,
+      amount: 100,
+      date: '2026-11-07',
+      forever: true
+    }
+    expect(compensationApplies(row, 'Shai', '2026-10-24', '2026-10-30')).toBe(false)
+    expect(compensationApplies(row, 'Shai', '2026-11-07', '2026-11-13')).toBe(true)
+    expect(compensationApplies(row, 'Shai', '2026-12-05', '2026-12-11')).toBe(true)
+    expect(compensationApplies({ ...row, date: '' }, 'Shai', '2026-10-24', '2026-10-30')).toBe(true)
+  })
+
+  it('opens the current payroll week when nothing is saved', () => {
+    const storage = { getItem: () => null, setItem() {} } as unknown as Storage
+    expect(resolvePayrollView([], storage, '2026-12-01')).toEqual({
+      staffName: 'Shai',
+      startDate: '2026-11-28',
+      endDate: '2026-12-04'
+    })
   })
 
   it('reads an older payroll date as the week ending that day', () => {

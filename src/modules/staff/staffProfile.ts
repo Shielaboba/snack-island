@@ -1,4 +1,5 @@
 import { STAFF_NAMES, type StaffName } from '../../models/StaffClock'
+import { manilaToday } from '../staffClock/staffClockUtils'
 
 export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 
@@ -19,6 +20,8 @@ export type StaffLoan = {
   payrollCount: number
   firstPayrollDate: string
   paid: boolean
+  // Day the loan was marked paid. Paydays before it keep their deduction.
+  paidOn: string
 }
 
 export type StaffCompensation = {
@@ -26,6 +29,7 @@ export type StaffCompensation = {
   name: string
   staffName: StaffName
   amount: number
+  // For a one-off this is the day it is paid. For forever it is the day it starts.
   date: string
   forever: boolean
 }
@@ -43,6 +47,15 @@ const PAYABLE_KEY = 'snack-island-staff-payables'
 const COMPENSATION_KEY = 'snack-island-staff-compensation'
 const PAYMENT_KEY = 'snack-island-staff-payments'
 const PROFILE_KEY = 'snack-island-staff-profiles'
+
+// Shared payroll records. The browser copy is a cache of the shared table.
+export const PAYROLL_STORAGE_KEYS = {
+  profiles: PROFILE_KEY,
+  payables: PAYABLE_KEY,
+  compensation: COMPENSATION_KEY,
+  payments: PAYMENT_KEY
+} as const
+export type PayrollRecordKey = keyof typeof PAYROLL_STORAGE_KEYS
 const VIEW_KEY = 'snack-island-payroll-view'
 
 export type PayrollView = {
@@ -74,7 +87,8 @@ export function loadStaffPayables(storage: Storage = globalThis.localStorage): S
           deductionTotal: Number(loan.deductionTotal) || 0,
           payrollCount: Number(loan.payrollCount) || 0,
           firstPayrollDate: loan.firstPayrollDate,
-          paid: loan.paid === true
+          paid: loan.paid === true,
+          paidOn: loan.paid === true && isIsoDate(loan.paidOn) ? loan.paidOn : ''
         }
       ]
     })
@@ -105,7 +119,7 @@ export function loadStaffCompensation(storage: Storage = globalThis.localStorage
           name: typeof item.name === 'string' ? item.name : '',
           staffName: item.staffName,
           amount: Number(item.amount) || 0,
-          date: forever ? '' : item.date ?? '',
+          date: isIsoDate(item.date) ? item.date : '',
           forever
         }
       ]
@@ -186,7 +200,8 @@ export function compensationApplies(
   endDate: string
 ): boolean {
   if (row.staffName !== staffName || endDate < startDate || (Number(row.amount) || 0) <= 0) return false
-  if (row.forever) return true
+  // Forever starts on its date. Older rows saved without a date apply to every week.
+  if (row.forever) return !row.date || row.date <= endDate
   return row.date >= startDate && row.date <= endDate
 }
 
@@ -268,15 +283,20 @@ export function savePayrollView(view: PayrollView, storage: Storage = globalThis
   storage.setItem(VIEW_KEY, JSON.stringify(view))
 }
 
-export function resolvePayrollView(loans: StaffLoan[], storage: Storage = globalThis.localStorage): PayrollView {
+export function resolvePayrollView(
+  loans: StaffLoan[],
+  storage: Storage = globalThis.localStorage,
+  today: string = manilaToday()
+): PayrollView {
   const saved = loadPayrollView(storage)
   if (saved) return saved
   const latest = loans[loans.length - 1]
-  if (!latest) return { staffName: 'Shai', startDate: '2026-10-31', endDate: '2026-11-06' }
-  const weekday = loadStaffProfiles(storage).find((row) => row.name === latest.staffName)?.payrollWeekday ?? 0
-  const endDate = firstPaydayOnOrAfter(latest.firstPayrollDate, weekday)
+  const staffName: StaffName = latest?.staffName ?? 'Shai'
+  const weekday = loadStaffProfiles(storage).find((row) => row.name === staffName)?.payrollWeekday ?? 0
+  // With no loan to point at, open the current payroll week.
+  const endDate = firstPaydayOnOrAfter(latest?.firstPayrollDate ?? today, weekday)
   return {
-    staffName: latest.staffName,
+    staffName,
     startDate: addDays(endDate, -6),
     endDate
   }
@@ -387,6 +407,13 @@ export function deductionForLoan(
   return perPayrollDeduction(loan)
 }
 
+// A loan marked paid stops deducting from that day on. Earlier paydays keep their deduction.
+// Loans marked paid before paidOn was recorded never deduct.
+function loanDeductsOn(loan: Pick<StaffLoan, 'paid' | 'paidOn'>, payrollDate: string): boolean {
+  if (!loan.paid) return true
+  return loan.paidOn !== '' && payrollDate < loan.paidOn
+}
+
 export function deductionForPayroll(
   loans: StaffLoan[],
   staffName: StaffName,
@@ -395,7 +422,7 @@ export function deductionForPayroll(
 ): number {
   return roundMoney(
     loans
-      .filter((loan) => loan.staffName === staffName && !loan.paid)
+      .filter((loan) => loan.staffName === staffName && loanDeductsOn(loan, payrollDate))
       .reduce((sum, loan) => sum + deductionForLoan(loan, payrollWeekday, payrollDate), 0)
   )
 }
@@ -422,14 +449,7 @@ export function deductionForPayrollRange(
 ): number {
   const dates = paydaysInRange(startDate, endDate, payrollWeekday)
   return roundMoney(
-    loans
-      .filter((loan) => loan.staffName === staffName && !loan.paid)
-      .reduce((sum, loan) => {
-        const due = dates
-          .map((date) => deductionForLoan(loan, payrollWeekday, date))
-          .find((amount) => amount > 0)
-        return sum + (due ?? 0)
-      }, 0)
+    dates.reduce((sum, date) => sum + deductionForPayroll(loans, staffName, payrollWeekday, date), 0)
   )
 }
 
@@ -452,10 +472,10 @@ export type PayrollSummaryInput = {
 
 function escapeHtml(value: string): string {
   return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 export function payrollSummaryText(input: PayrollSummaryInput): string {

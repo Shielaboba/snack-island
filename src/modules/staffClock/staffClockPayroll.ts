@@ -1,5 +1,5 @@
 import type { ClockValidationResult, StaffClockShift, StaffName } from '../../models/StaffClock'
-import { MIN_OT_HOURS, STANDARD_SHIFT_HOURS, manilaYmd, recordedOvertimeHours } from './staffClockUtils'
+import { STANDARD_SHIFT_HOURS, manilaYmd, recordedOvertimeHours } from './staffClockUtils'
 
 export type PayrollInput = {
   staffName: StaffName
@@ -22,13 +22,10 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-// The 2-hour minimum, including a clock-out from 11:30 PM through midnight, is half a day.
-// Longer overtime is paid at the daily rate for every 8 hours, and never below that half day.
+// Overtime uses the daily rate spread across 8 hours. Hours under the 2-hour minimum are already 0.
 function overtimePay(otHours: number, ratePerDay: number): number {
   if (otHours <= 0 || ratePerDay <= 0) return 0
-  const halfDay = ratePerDay / 2
-  if (otHours <= MIN_OT_HOURS) return halfDay
-  return Math.max(halfDay, (otHours / STANDARD_SHIFT_HOURS) * ratePerDay)
+  return (otHours / STANDARD_SHIFT_HOURS) * ratePerDay
 }
 
 // Only shifts that admin/auditor approved on both ends count as a paid day.

@@ -46,7 +46,7 @@ describe('payroll calculator', () => {
     expect(result.netPay).toBe(500)
   })
 
-  it('pays the 2-hour overtime minimum as half a day', () => {
+  it('pays the 2-hour overtime minimum at the hourly rate from the 8-hour day', () => {
     const row = shift({
       clock_out_at: '2026-11-04T16:00:00.000Z',
       ot_requested: true,
@@ -54,12 +54,24 @@ describe('payroll calculator', () => {
     })
     const result = calculatePayroll([row], range)
     expect(result.otHours).toBe(2)
-    expect(result.otPay).toBe(250)
+    expect(result.otPay).toBe(125)
     expect(result.regularPay).toBe(500)
-    expect(result.netPay).toBe(750)
+    expect(result.netPay).toBe(625)
   })
 
-  it('pays half a day when a requested clock-out is from 11:30 PM through midnight', () => {
+  it('pays each overtime hour at the daily rate divided by 8', () => {
+    const row = shift({
+      clock_out_at: '2026-11-04T17:00:00.000Z',
+      ot_requested: true,
+      ot_status: 'approved'
+    })
+    const result = calculatePayroll([row], range)
+    expect(result.otHours).toBe(3)
+    expect(result.otPay).toBe(187.5)
+    expect(result.netPay).toBe(687.5)
+  })
+
+  it('pays the 2 credited hours from 11:30 PM through midnight at the hourly rate', () => {
     const elevenThirty = shift({
       clock_out_at: '2026-11-04T15:30:00.000Z',
       ot_requested: true,
@@ -72,8 +84,8 @@ describe('payroll calculator', () => {
       ot_requested: true,
       ot_status: 'approved'
     })
-    expect(calculatePayroll([elevenThirty], range)).toMatchObject({ otHours: 2, otPay: 250, netPay: 750 })
-    expect(calculatePayroll([midnight], range)).toMatchObject({ otHours: 2, otPay: 250 })
+    expect(calculatePayroll([elevenThirty], range)).toMatchObject({ otHours: 2, otPay: 125, netPay: 625 })
+    expect(calculatePayroll([midnight], range)).toMatchObject({ otHours: 2, otPay: 125 })
     const elevenTwentyNine = shift({
       clock_out_at: '2026-11-04T15:29:00.000Z',
       ot_requested: true,
@@ -88,7 +100,7 @@ describe('payroll calculator', () => {
       ot_requested: true,
       ot_status: 'approved'
     })
-    expect(calculatePayroll([row], range)).toMatchObject({ otHours: 2, otPay: 250, netPay: 750 })
+    expect(calculatePayroll([row], range)).toMatchObject({ otHours: 2, otPay: 125, netPay: 625 })
   })
 
   it('pays 8 overtime hours at the daily rate', () => {
@@ -105,7 +117,7 @@ describe('payroll calculator', () => {
     expect(result.netPay).toBe(1000)
   })
 
-  it('pays each 2-hour overtime minimum as its own half day', () => {
+  it('pays each shift at its own hourly overtime rate', () => {
     const first = shift({
       id: 'nov-1',
       clock_in_at: '2026-11-01T06:00:00.000Z',
@@ -120,7 +132,7 @@ describe('payroll calculator', () => {
       ot_requested: true,
       ot_status: 'approved'
     })
-    expect(calculatePayroll([first, second], range)).toMatchObject({ otHours: 4, otPay: 500, regularPay: 1000 })
+    expect(calculatePayroll([first, second], range)).toMatchObject({ otHours: 4, otPay: 250, regularPay: 1000 })
   })
 
   it('pays 4 hours OT at the same hourly rate as the day', () => {

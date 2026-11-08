@@ -37,7 +37,7 @@ function mountModal() {
 }
 
 describe('PayrollCalculatorModal', () => {
-  it('has staff, dates, rate per day, and deduction, and pays 2h OT as half a day', async () => {
+  it('has staff, dates, rate per day, and deduction, and pays 2h OT at the hourly rate', async () => {
     const { app } = mountModal()
     await nextTick()
     const modal = document.querySelector('[data-testid="payroll-modal"]')
@@ -62,9 +62,9 @@ describe('PayrollCalculatorModal', () => {
     expect(summary).toMatch(/1 day/)
     expect(summary).toMatch(/2\.00h/)
     expect(summary).toMatch(/₱500\.00/)
-    expect(summary).toMatch(/₱250\.00/)
+    expect(summary).toMatch(/₱125\.00/)
     expect(summary).toMatch(/₱50\.00/)
-    expect(summary).toMatch(/₱700\.00/)
+    expect(summary).toMatch(/₱575\.00/)
     app.unmount()
   })
 })

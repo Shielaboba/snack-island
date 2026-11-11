@@ -4,16 +4,17 @@ import { PAYROLL_STORAGE_KEYS, type PayrollRecordKey } from '../modules/staff/st
 
 export const STAFF_PAYROLL_TABLE = 'staff_payroll_records'
 
-// Payroll setup lives in one shared table. Each browser keeps a copy in localStorage,
-// so pages read through the same loaders they already use.
+// Payroll setup lives in one shared table. This browser only keeps a copy of that table.
 export const staffPayrollService = {
-  // Copies the shared records into this browser. Keys with no shared row keep the local copy.
+  // Replaces this browser's lists with the database. A list that is not in the table is empty.
   async pull(storage: Storage = globalThis.localStorage): Promise<void> {
     const { data, error } = await supabase.from(STAFF_PAYROLL_TABLE).select('key, data')
     if (error) throw error
-    for (const row of (data ?? []) as { key: string; data: unknown }[]) {
-      const storageKey = PAYROLL_STORAGE_KEYS[row.key as PayrollRecordKey]
-      if (storageKey) storage.setItem(storageKey, JSON.stringify(row.data ?? []))
+    const rows = (data ?? []) as { key: string; data: unknown }[]
+    const byKey = new Map(rows.map((row) => [row.key, row.data]))
+    for (const key of Object.keys(PAYROLL_STORAGE_KEYS) as PayrollRecordKey[]) {
+      const remote = byKey.get(key)
+      storage.setItem(PAYROLL_STORAGE_KEYS[key], JSON.stringify(Array.isArray(remote) ? remote : []))
     }
   },
 
